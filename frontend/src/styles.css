@@ -6,7 +6,6 @@
   background: #f8f7f6;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
   --plum: #722d4e;
   --plum-dark: #4b1f35;
   --plum-light: #f5eaf0;
@@ -577,6 +576,15 @@ tbody tr:hover { background: #fdfbfc; }
   .modal-backdrop { padding: 10px; }
   .modal { max-height: calc(100vh - 20px); padding: 16px; }
   .toast { right: 12px; bottom: 12px; font-size: 9px; }
+  body { font-weight: 500; -webkit-font-smoothing: auto; }
+  .page-content { font-size: 14px; font-weight: 500; }
+  .page-content p { font-size: 12px; line-height: 1.5; }
+  .page-content :is(.page-description, .welcome-strip span:not(.strip-decoration), .stat-top, .stat-footer, .inventory-summary, .article-category, .article-meta, .article-card-footer, .mini-metric span:last-child, .customer-stat-row > div > span, .customer-cell small, .sub-cell, .finance-label, .finance-card > small, .due-panel > div:nth-child(2) span, .return-alert span, .return-tip, .calendar-toolbar span, .calendar-weekday, .calendar-legend span, .app-footer) { font-size: 11px; }
+  .page-heading > .button,.profile-hero .button { font-size: 10px; }
+  .page-content td,.page-content th { font-size: 11px; }
+  .page-content input,.page-content select,.page-content textarea { min-height: 40px; font-size: 14px; }
+  .calendar-event,.more-events { font-size: 8px; }
+  .settings-nav button { font-size: 11px; }
 }
 @media (max-height: 600px) {
   .sidebar { overflow-y: auto; }
@@ -695,6 +703,14 @@ tbody tr:hover { background: #fdfbfc; }
   .access-page { padding: 18px 12px 52px; }
   .access-card { padding: 20px 16px; }
   .access-title h1 { font-size: 19px; }
+  .access-title p { font-size: 11px; }
+  .login-profile-copy strong { font-size: 12px; }
+  .login-profile-copy small { font-size: 10px; }
+  .login-lock,.sales-login-heading,.access-back,.access-field,.access-error,.access-submit { font-size: 11px; }
+  .sales-login-heading { letter-spacing: .6px; }
+  .access-footer,.access-demo-warning,.access-security-note { font-size: 10px; }
+  .access-field input { min-height: 44px; font-size: 14px; }
+  .access-submit { min-height: 44px; font-size: 12px; }
   .sales-login-grid { gap: 6px; }
   .sales-login-card { gap: 7px; padding: 7px 6px; }
   .login-avatar { width: 32px; height: 32px; flex-basis: 32px; }
