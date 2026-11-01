@@ -465,13 +465,22 @@ function AdminPinForm({ onSave, onCancel }) {
   </form>;
 }
 
-function SettingsPage({ language, onLanguageChange }) {
+function SettingsPage({ language, onLanguageChange, fontSize, onFontSizeChange }) {
   const [saved, setSaved] = useState(false);
   return <>
     <PageHeader eyebrow="PREFERENCES" title="Boutique settings" description="Configure business details and defaults for your workspace." />
     <div className="settings-layout"><nav className="settings-nav"><button className="settings-active"><Settings size={16} />Business profile</button><button><ShieldCheck size={16} />Security & access</button><button><Bell size={16} />Notifications</button><button><FileText size={16} />Receipt details</button></nav>
       <section className="panel settings-panel"><div className="panel-heading"><div><h2>Business profile</h2><p>These details appear on booking receipts.</p></div></div>
-        <div className="settings-language"><Field label="Language"><select value={language} onChange={(event) => onLanguageChange(event.target.value)}><option value="en">English</option><option value="ur">Urdu</option></select></Field><p>English is the default language. Choose Urdu to switch the interface.</p></div>
+        <div className="settings-language">
+          <Field label="Language"><select value={language} onChange={(event) => onLanguageChange(event.target.value)}><option value="en">English</option><option value="ur">Urdu</option></select></Field>
+          <Field label="Font size">
+            <div className="font-size-control">
+              <input aria-label="Font size" type="range" min="14" max="24" step="1" value={fontSize} onChange={(event) => onFontSizeChange(event.target.value)} />
+              <output>{fontSize}px</output>
+            </div>
+          </Field>
+          <p>English is the default language. Choose Urdu to switch the interface. Font size is saved in this browser.</p>
+        </div>
         <div className="settings-fields"><Field label="Boutique name"><input defaultValue="Dulhan Rani Boutique" /></Field><Field label="Contact phone"><input defaultValue="+92 300 0000000" /></Field><Field label="Email address"><input defaultValue="hello@dulhanrani.pk" /></Field><Field label="Currency"><select defaultValue="PKR — Pakistani Rupee"><option>PKR — Pakistani Rupee</option></select></Field><Field label="Boutique address" className="field-full"><textarea rows="3" defaultValue="Zargran,Sheikhupura, Pakistan" /></Field></div>
         <div className="settings-save"><span>{saved ? "Changes saved in this demo." : "Changes are stored in this browser demo."}</span><Button onClick={() => setSaved(true)} icon={Check}>Save changes</Button></div></section></div>
   </>;
@@ -553,6 +562,8 @@ export default function App() {
   const [quickCreatedArticleId, setQuickCreatedArticleId] = useState("");
   const [toast, setToast] = useState("");
   const [language, setLanguage] = useLocalData("language", "en");
+  const [savedFontSize, setFontSize] = useLocalData("font-size", "18");
+  const fontSize = ({ normal: "14", large: "18", "extra-large": "24" })[savedFontSize] || savedFontSize;
   const toastTimer = useRef(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -566,6 +577,9 @@ export default function App() {
     const isUrdu = language === "ur";
     root.lang = isUrdu ? "ur" : "en";
     root.dir = isUrdu ? "rtl" : "ltr";
+    root.dataset.fontSize = fontSize;
+    root.style.setProperty("--mobile-reading-size", `${fontSize}px`);
+    root.style.setProperty("--mobile-heading-size", `${Math.round(Number(fontSize) * 1.7)}px`);
     if (!content) return undefined;
     localizeNode(content, language);
     const observer = new MutationObserver((records) => {
@@ -577,7 +591,7 @@ export default function App() {
     });
     observer.observe(content, { attributes: true, attributeFilter: ["placeholder", "aria-label", "title"], characterData: true, childList: true, subtree: true });
     return () => observer.disconnect();
-  }, [language]);
+  }, [fontSize, language]);
   const notify = (message) => {
     setToast(message);
     window.clearTimeout(toastTimer.current);
@@ -821,7 +835,7 @@ export default function App() {
       case "calendar": return <CalendarPage bookings={bookings} onNew={() => setModal({ type: "booking" })} />;
       case "reports": return <ReportsPage bookings={bookings} payments={payments} articles={articles} />;
       case "staff": return <StaffPage salespeople={salespeople} onAdd={openAddStaff} onEdit={(person) => setModal({ type: "staff-edit", person })} onToggle={handleStaffToggle} onDelete={handleStaffDelete} onChangeAdminPin={() => setModal({ type: "admin-pin" })} />;
-      case "settings": return <SettingsPage language={language} onLanguageChange={setLanguage} />;
+      case "settings": return <SettingsPage language={language} onLanguageChange={setLanguage} fontSize={fontSize} onFontSizeChange={setFontSize} />;
       case "profile": return <ProfilePage profile={currentProfile} role={role} onEdit={() => setModal({ type: "profile-edit" })} />;
       default: return <Dashboard articles={articles} bookings={bookings} role={role} profile={currentProfile} onNavigate={nav} />;
     }
