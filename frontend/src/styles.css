@@ -349,9 +349,6 @@ tbody tr:hover { background: #fdfbfc; }
 .settings-fields { display: grid; grid-template-columns: repeat(2,1fr); gap: 13px; margin: 17px 0; }
 .settings-language { display: grid; grid-template-columns: minmax(180px,1fr) minmax(0,2fr); align-items: end; gap: 13px; margin-top: 16px; }
 .settings-language p { margin: 0 0 10px; color: #968990; font-size: 9px; line-height: 1.5; }
-.font-size-control { display: flex; min-height: 37px; align-items: center; gap: 12px; }
-.font-size-control input[type="range"] { width: 100%; min-width: 0; accent-color: var(--plum); cursor: pointer; }
-.font-size-control output { min-width: 46px; color: #64344d; font-size: 13px; font-weight: 700; text-align: center; }
 .field { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: #66565e; font-size: 10px; }
 .field > span { color: #71636a; font-size: 9px; font-weight: 600; }
 .field input,.field select,.field textarea { width: 100%; min-height: 37px; padding: 9px 10px; border: 1px solid #e9e3e6; border-radius: 5px; outline: 0; background: #fff; color: #54474d; font-size: 10px; }
@@ -569,8 +566,7 @@ tbody tr:hover { background: #fdfbfc; }
   .settings-nav { display: grid; grid-template-columns: repeat(2,1fr); }
   .settings-nav button { padding: 8px 5px; font-size: 8px; }
   .settings-fields { grid-template-columns: 1fr; }
-  .settings-language { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
-  .settings-language > p { grid-column: 1/-1; }
+  .settings-language { grid-template-columns: 1fr; gap: 6px; }
   .settings-language p { margin: 0; }
   .field-full { grid-column: 1; }
   .profile-grid { grid-template-columns: 1fr; }
@@ -594,7 +590,6 @@ tbody tr:hover { background: #fdfbfc; }
   .page-content input,.page-content select,.page-content textarea { min-height: 40px; font-size: 14px; }
   .calendar-event,.more-events { font-size: 8px; }
   .settings-nav button { font-size: 11px; }
-  .page-content input,.page-content select,.page-content textarea,.modal input,.modal select,.modal textarea { min-height: 46px; }
 }
 @keyframes toast-in { from { opacity: 0; transform: translate(50%,-8px); } to { opacity: 1; transform: translate(50%,0); } }
 @media (max-height: 600px) {
@@ -754,13 +749,6 @@ tbody tr:hover { background: #fdfbfc; }
 [dir="rtl"] .modal-heading,[dir="rtl"] .page-heading { direction: rtl; }
 [dir="rtl"] .field > span,[dir="rtl"] .page-content td,[dir="rtl"] .page-content th { text-align: right; }
 [dir="rtl"] .app-footer { direction: rtl; }
-#root :where(.sidebar,.topbar,.page-content,.modal,.toast,.access-page) :where(span,small,p,button,label,td,th):where(:not(.calendar-grid *)) { font-size: var(--mobile-reading-size) !important; font-weight: 600; line-height: 1.55; }
-#root :where(.sidebar,.topbar,.page-content,.modal,.toast,.access-page) :where(strong,b):where(:not(.calendar-grid *)) { font-size: var(--mobile-reading-size) !important; font-weight: 700; line-height: 1.5; }
-#root :where(.page-content,.modal,.access-page) :where(h1,h2,h3) { line-height: 1.35; }
-#root .page-heading h1 { font-size: var(--mobile-heading-size); font-weight: 700; }
-#root :where(.page-content,.modal,.access-page) :where(input,select,textarea) { font-size: var(--mobile-reading-size); font-weight: 600; }
-#root :where(.page-content,.modal) .button,#root .settings-nav button,#root .access-submit { font-size: var(--mobile-reading-size); font-weight: 700; }
-#root .toast { font-size: var(--mobile-reading-size); font-weight: 700; }
 @media (max-width: 1150px) {
   [dir="rtl"] .main-area { margin-right: 225px; }
 }
