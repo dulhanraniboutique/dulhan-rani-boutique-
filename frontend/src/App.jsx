@@ -12,9 +12,17 @@ import PhotoUpload from "./PhotoUpload.jsx";
 import { Field } from "./shared.jsx";
 import { makePinRecord, verifyPin, validPin } from "./auth.js";
 import { itemChanges, loadCollection, mergeChanges, persistCollectionChanges, refreshCollection } from "./dataSync.js";
-import { localizeNode } from "./i18n.js";
+import { localizeNode, translateText } from "./i18n.js";
 
 const currency = (amount) => `PKR ${Number(amount || 0).toLocaleString("en-PK")}`;
+const defaultBusinessSettings = {
+  name: "Dulhan Rani Boutique",
+  phone: "+92 300 0000000",
+  email: "hello@dulhanrani.pk",
+  address: "Zargran, Sheikhupura, Pakistan",
+  receiptFooter: "Thank you for choosing Dulhan Rani Boutique.",
+};
+const defaultNotificationSettings = { bookings: true, payments: true, returns: true };
 const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const bookingArticleIds = (booking) => booking.articles?.map((article) => typeof article === "string" ? article : article.id) || (booking.article ? [booking.article] : []);
 const bookingArticleNames = (booking) => booking.articles?.map((article) => typeof article === "string" ? article : article.name).filter(Boolean) || (booking.articleName ? [booking.articleName] : []);
@@ -154,9 +162,9 @@ function PageHeader({ eyebrow, title, description, action, actionLabel, actionIc
   </div>;
 }
 
-function Modal({ title, description, onClose, children, wide = false }) {
-  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-    <section className={`modal ${wide ? "modal-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby="modal-title">
+function Modal({ title, description, onClose, children, wide = false, className = "" }) {
+  return <div className={`modal-backdrop ${className ? `${className}-backdrop` : ""}`} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <section className={`modal ${wide ? "modal-wide" : ""} ${className}`} role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div className="modal-heading"><div><h2 id="modal-title">{title}</h2><p>{description}</p></div>
         <button className="icon-button" aria-label="Close dialog" onClick={onClose}><X size={19} /></button></div>
       {children}
@@ -263,7 +271,7 @@ function ArticleCard({ article, onEdit }) {
       <div className="article-card-footer"><span>Min. order <strong>{currency(article.minOrder)}</strong></span><button aria-label={`Edit ${article.name}`} onClick={() => onEdit(article)}><Pencil size={15} /></button></div></div></article>;
 }
 
-function BookingsPage({ bookings, query, onQueryChange, onNew, onView, isAdmin, onEdit, onDelete }) {
+function BookingsPage({ bookings, query, onQueryChange, onNew, onView, isAdmin, onEdit, onDelete, onStatusChange, onRecordPayment, onPrintReceipt }) {
   const [filter, setFilter] = useState("All bookings");
   const [eventDate, setEventDate] = useState("");
   const filtered = bookings.filter((item) => `${item.id} ${item.customer} ${bookingArticleLabels(item)} ${bookingArticleTitles(item)}`.toLowerCase().includes(query.toLowerCase())
@@ -281,7 +289,13 @@ function BookingsPage({ bookings, query, onQueryChange, onNew, onView, isAdmin, 
         <td className="strong-cell">{booking.id}</td><td><strong>{booking.customer}</strong><small className="sub-cell">{booking.phone}</small></td>
         <td><span className="article-id">{bookingArticleLabels(booking)}</span><small className="sub-cell">{bookingArticleTitles(booking)}</small></td><td>{readableDate(booking.delivery)}</td><td>{readableDate(booking.event)}</td><td>{readableDate(booking.returnDate)}</td>
         <td><strong>{currency(booking.amount)}</strong><small className="sub-cell">{booking.amount > booking.paid ? `${currency(booking.amount - booking.paid)} due` : "Paid"}</small></td>
-        <td><Status>{booking.status}</Status></td><td><div className="booking-row-actions"><button className="icon-button" onClick={(event) => { event.stopPropagation(); onView(booking); }} aria-label="View booking"><Eye size={16} /></button>{isAdmin && <><button className="icon-button" onClick={(event) => { event.stopPropagation(); onEdit(booking); }} aria-label={`Edit booking ${booking.id}`}><Pencil size={15} /></button><button className="icon-button booking-delete-button" onClick={(event) => { event.stopPropagation(); onDelete(booking); }} aria-label={`Delete booking ${booking.id}`}><Trash2 size={15} /></button></>}</div></td></tr>)}</tbody></table>
+        <td><Status>{booking.status}</Status></td><td><div className="booking-row-actions"><button className="icon-button" onClick={(event) => { event.stopPropagation(); onView(booking); }} aria-label="View booking"><Eye size={16} /></button>
+          {booking.status === "Confirmed" && (booking.amount > booking.paid
+            ? <Button variant="small" icon={Wallet} onClick={(event) => { event.stopPropagation(); onRecordPayment(booking); }}>Receive balance</Button>
+            : <Button variant="small" icon={Truck} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Out"); }}>Mark picked up</Button>)}
+          {booking.status === "Out" && <Button variant="small" icon={Check} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Returned"); }}>Confirm return</Button>}
+          {booking.status === "Out" && booking.amount > booking.paid && <Button variant="small" icon={Wallet} onClick={(event) => { event.stopPropagation(); onRecordPayment(booking); }}>Receive balance</Button>}
+          {isAdmin && <><button className="icon-button" onClick={(event) => { event.stopPropagation(); onEdit(booking); }} aria-label={`Edit booking ${booking.id}`}><Pencil size={15} /></button><button className="icon-button booking-delete-button" onClick={(event) => { event.stopPropagation(); onDelete(booking); }} aria-label={`Delete booking ${booking.id}`}><Trash2 size={15} /></button></>}</div></td></tr>)}</tbody></table>
       {filtered.length === 0 && <EmptyState title="No bookings found" detail="Try another search or add your first booking." />}</div></section>
   </>;
 }
@@ -465,15 +479,40 @@ function AdminPinForm({ onSave, onCancel }) {
   </form>;
 }
 
-function SettingsPage({ language, onLanguageChange }) {
+function SettingsPage({ language, onLanguageChange, business, onSaveBusiness, notifications, onNotificationsChange, onChangeAdminPin, onManageStaff, onNotify }) {
   const [saved, setSaved] = useState(false);
+  const [activeSection, setActiveSection] = useState("business");
+  const [draft, setDraft] = useState({ ...defaultBusinessSettings, ...business });
+  useEffect(() => setDraft({ ...defaultBusinessSettings, ...business }), [business]);
+  const updateDraft = (key) => (event) => setDraft({ ...draft, [key]: event.target.value });
+  const saveDraft = () => {
+    onSaveBusiness(draft);
+    setSaved(true);
+    onNotify("Settings saved successfully.");
+  };
+  const sections = [
+    { id: "business", label: "Business profile", icon: Settings },
+    { id: "security", label: "Security & access", icon: ShieldCheck },
+    { id: "notifications", label: "Notifications", icon: Bell },
+    { id: "receipt", label: "Receipt details", icon: FileText },
+  ];
   return <>
     <PageHeader eyebrow="PREFERENCES" title="Boutique settings" description="Configure business details and defaults for your workspace." />
-    <div className="settings-layout"><nav className="settings-nav"><button className="settings-active"><Settings size={16} />Business profile</button><button><ShieldCheck size={16} />Security & access</button><button><Bell size={16} />Notifications</button><button><FileText size={16} />Receipt details</button></nav>
-      <section className="panel settings-panel"><div className="panel-heading"><div><h2>Business profile</h2><p>These details appear on booking receipts.</p></div></div>
-        <div className="settings-language"><Field label="Language"><select value={language} onChange={(event) => onLanguageChange(event.target.value)}><option value="en">English</option><option value="ur">Urdu</option></select></Field><p>English is the default language. Choose Urdu to switch the interface.</p></div>
-        <div className="settings-fields"><Field label="Boutique name"><input defaultValue="Dulhan Rani Boutique" /></Field><Field label="Contact phone"><input defaultValue="+92 300 0000000" /></Field><Field label="Email address"><input defaultValue="hello@dulhanrani.pk" /></Field><Field label="Currency"><select defaultValue="PKR — Pakistani Rupee"><option>PKR — Pakistani Rupee</option></select></Field><Field label="Boutique address" className="field-full"><textarea rows="3" defaultValue="Zargran,Sheikhupura, Pakistan" /></Field></div>
-        <div className="settings-save"><span>{saved ? "Changes saved in this demo." : "Changes are stored in this browser demo."}</span><Button onClick={() => setSaved(true)} icon={Check}>Save changes</Button></div></section></div>
+    <div className="settings-layout"><nav className="settings-nav">{sections.map(({ id, label, icon: Icon }) => <button key={id} className={activeSection === id ? "settings-active" : ""} onClick={() => setActiveSection(id)}><Icon size={16} />{label}</button>)}</nav>
+      <section className="panel settings-panel">
+        {activeSection === "business" && <><div className="panel-heading"><div><h2>Business profile</h2><p>Configure your boutique and workspace language.</p></div></div>
+          <div className="settings-language"><Field label="Language"><select value={language} onChange={(event) => onLanguageChange(event.target.value)}><option value="en">English</option><option value="ur">Urdu</option></select></Field><p>English is the default language. Choose Urdu to switch the interface.</p></div>
+          <div className="settings-fields"><Field label="Boutique name"><input value={draft.name} onChange={updateDraft("name")} required /></Field><Field label="Contact phone"><input value={draft.phone} onChange={updateDraft("phone")} /></Field><Field label="Email address"><input type="email" value={draft.email} onChange={updateDraft("email")} /></Field><Field label="Boutique address" className="field-full"><textarea rows="3" value={draft.address} onChange={updateDraft("address")} /></Field></div>
+          <div className="settings-save"><span>{saved ? "Changes saved in this browser." : "Changes are stored in this browser."}</span><Button onClick={saveDraft} icon={Check}>Save changes</Button></div></>}
+        {activeSection === "security" && <><div className="panel-heading"><div><h2>Security & access</h2><p>Manage sign-in protection for your boutique workspace.</p></div></div>
+          <div className="settings-security-card"><span className="role-option-icon admin-icon"><LockKeyhole size={18} /></span><div><strong>Administrator PIN</strong><p>Your administrator profile is protected with a PIN. Salespeople use their individual PINs.</p></div><Status>Protected</Status></div>
+          <div className="settings-security-actions"><Button variant="outline" icon={ShieldCheck} onClick={onChangeAdminPin}>Change administrator PIN</Button><Button variant="outline" icon={Users} onClick={onManageStaff}>Manage salesperson access</Button></div></>}
+        {activeSection === "notifications" && <><div className="panel-heading"><div><h2>Notifications</h2><p>Choose which in-app alerts appear in the notification menu.</p></div></div>
+          <div className="settings-toggle-list">{[["bookings","Booking updates","New and updated booking alerts"],["payments","Payment reminders","Outstanding balance and payment alerts"],["returns","Return reminders","Upcoming and overdue return alerts"]].map(([key,title,description]) => <label className="settings-toggle" key={key}><span><strong>{title}</strong><small>{description}</small></span><input type="checkbox" checked={notifications[key]} onChange={(event) => onNotificationsChange({ ...notifications, [key]: event.target.checked })} /></label>)}</div></>}
+        {activeSection === "receipt" && <><div className="panel-heading"><div><h2>Receipt details</h2><p>These business details appear on printed booking receipts.</p></div></div>
+          <div className="settings-fields"><Field label="Receipt business name"><input value={draft.name} onChange={updateDraft("name")} required /></Field><Field label="Contact phone"><input value={draft.phone} onChange={updateDraft("phone")} /></Field><Field label="Business address" className="field-full"><textarea rows="2" value={draft.address} onChange={updateDraft("address")} /></Field><Field label="Receipt footer message" className="field-full"><textarea rows="2" value={draft.receiptFooter} onChange={updateDraft("receiptFooter")} /></Field></div>
+          <div className="settings-save"><span>{saved ? "Receipt details saved." : "Receipt details are stored in this browser."}</span><Button onClick={saveDraft} icon={Check}>Save receipt details</Button></div></>}
+      </section></div>
   </>;
 }
 
@@ -538,6 +577,8 @@ export default function App() {
   const [customers, setCustomers] = useSyncedData("customers", seedCustomers);
   const [bookings, setBookings] = useSyncedData("bookings", seedBookings);
   const [payments, setPayments] = useSyncedData("payments", seedPayments);
+  const [businessSettings, setBusinessSettings] = useLocalData("business-settings", defaultBusinessSettings);
+  const [notificationSettings, setNotificationSettings] = useLocalData("notification-settings", defaultNotificationSettings);
   const [profile, setProfile] = useLocalData("profile", {
     name: "Sana Malik",
     email: "sana@dulhanrani.pk",
@@ -561,6 +602,11 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, []);
   useEffect(() => {
+    if (modal?.type !== "booking-detail") return undefined;
+    document.body.classList.add("printing-receipt");
+    return () => document.body.classList.remove("printing-receipt");
+  }, [modal?.type]);
+  useEffect(() => {
     const root = document.documentElement;
     const content = document.getElementById("root");
     const isUrdu = language === "ur";
@@ -579,10 +625,11 @@ export default function App() {
     return () => observer.disconnect();
   }, [language]);
   const notify = (message) => {
-    setToast(message);
+    setToast(translateText(message, language));
     window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(""), 5000);
   };
+  const configuredNotifications = { ...defaultNotificationSettings, ...notificationSettings };
   const role = session?.role || "admin";
   const activeSalesperson = session?.role === "sales" ? salespeople.find((person) => person.id === session.id) : null;
   const currentProfile = session?.role === "sales" ? activeSalesperson || profile : profile;
@@ -773,20 +820,41 @@ export default function App() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const booking = bookings.find((item) => item.id === form.get("booking"));
+    if (!booking) { notify("Choose a valid booking for this payment."); return; }
     const amount = Number(form.get("amount"));
-    if (amount <= 0) { notify("Enter a payment amount greater than zero."); return; }
+    if (!Number.isFinite(amount) || amount <= 0) { notify("Enter a payment amount greater than zero."); return; }
     if (amount > Math.max(booking.amount - booking.paid, 0)) { notify("Payment cannot exceed the booking's remaining balance."); return; }
     setPayments([{ id: `PAY-${2082 + payments.length}`, booking: booking.id, customer: booking.customer, date: today, amount, method: form.get("method"), receivedBy: currentProfile.name }, ...payments]);
     setBookings(bookings.map((item) => item.id === booking.id ? { ...item, paid: item.paid + amount } : item));
+    setCustomers(customers.map((item) => item.id === booking.customerId || item.name === booking.customer
+      ? { ...item, due: Math.max(Number(item.due || 0) - amount, 0) }
+      : item));
     setModal(null); notify("Payment recorded successfully.");
   };
   const handleReturn = (bookingId) => {
     const booking = bookings.find((item) => item.id === bookingId);
+    if (!booking || booking.status !== "Out") {
+      notify("Only a booking marked as picked up can be returned.");
+      return;
+    }
     const bookingIds = bookingArticleIds(booking);
     const articleHasOtherActiveBooking = (articleId) => bookings.some((item) => item.id !== bookingId && bookingArticleIds(item).includes(articleId) && !["Returned", "Cancelled"].includes(item.status));
     setBookings(bookings.map((item) => item.id === bookingId ? { ...item, status: "Returned", actualReturn: today } : item));
     setArticles(articles.map((item) => bookingIds.includes(item.id) && item.status !== "Maintenance" ? { ...item, status: articleHasOtherActiveBooking(item.id) ? "Booked" : "Available" } : item));
     notify(`${bookingArticleTitles(booking)} marked as returned.`);
+  };
+  const handleBookingStatusChange = (booking, nextStatus) => {
+    if (nextStatus === "Out") {
+      if (booking.status !== "Confirmed") return;
+      if (booking.paid < booking.amount) {
+        notify("Record the remaining payment before marking this booking as picked up.");
+        return;
+      }
+      setBookings(bookings.map((item) => item.id === booking.id ? { ...item, status: "Out", pickedUpAt: today } : item));
+      notify(`Booking ${booking.id} marked as picked up. Payment is clear.`);
+      return;
+    }
+    if (nextStatus === "Returned") handleReturn(booking.id);
   };
   if (bootStage === "splash") return <SplashScreen />;
   if (!session) return <AccessScreen
@@ -814,14 +882,14 @@ export default function App() {
   const content = (() => {
     switch (activePage) {
       case "articles": return <ArticlesPage articles={articles} query={filteredQuery} onQueryChange={setQuery} onAdd={openArticleModal} onEdit={openEditArticle} />;
-      case "bookings": return <BookingsPage bookings={bookings} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} onEdit={openEditBooking} onDelete={handleBookingDelete} />;
+      case "bookings": return <BookingsPage bookings={bookings} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} onPrintReceipt={(booking) => { setModal({ type: "booking-detail", booking }); window.setTimeout(() => window.print(), 100); }} />;
       case "customers": return <CustomersPage customers={customers} query={filteredQuery} onQueryChange={setQuery} onAdd={openCustomerModal} />;
       case "payments": return <PaymentsPage payments={payments} bookings={bookings} query={filteredQuery} onQueryChange={setQuery} onAdd={openPaymentModal} />;
       case "returns": return <ReturnsPage bookings={bookings} onReturn={handleReturn} />;
       case "calendar": return <CalendarPage bookings={bookings} onNew={() => setModal({ type: "booking" })} />;
       case "reports": return <ReportsPage bookings={bookings} payments={payments} articles={articles} />;
       case "staff": return <StaffPage salespeople={salespeople} onAdd={openAddStaff} onEdit={(person) => setModal({ type: "staff-edit", person })} onToggle={handleStaffToggle} onDelete={handleStaffDelete} onChangeAdminPin={() => setModal({ type: "admin-pin" })} />;
-      case "settings": return <SettingsPage language={language} onLanguageChange={setLanguage} />;
+      case "settings": return <SettingsPage language={language} onLanguageChange={setLanguage} business={businessSettings} onSaveBusiness={setBusinessSettings} notifications={notificationSettings} onNotificationsChange={setNotificationSettings} onChangeAdminPin={() => setModal({ type: "admin-pin" })} onManageStaff={() => nav("staff")} onNotify={notify} />;
       case "profile": return <ProfilePage profile={currentProfile} role={role} onEdit={() => setModal({ type: "profile-edit" })} />;
       default: return <Dashboard articles={articles} bookings={bookings} role={role} profile={currentProfile} onNavigate={nav} />;
     }
@@ -839,7 +907,12 @@ export default function App() {
     <main className="main-area"><header className="topbar"><div className="topbar-left"><button className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="Open menu"><Menu size={21} /></button><div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>{pageTitles[activePage]}</strong></div></div>
       <div className="topbar-right"><label className="global-search"><Search size={16} /><input placeholder="Search anything..." value={query} onChange={(event) => setQuery(event.target.value)} /><kbd>⌘ K</kbd></label>
         <div className="notification-wrap"><button className="icon-button notification-button" aria-label="Notifications" onClick={() => setNotificationsOpen(!notificationsOpen)}><Bell size={18} /><i /></button>
-          {notificationsOpen && <div className="notification-popover"><strong>Notifications</strong><div><span className="notification-dot" /><p><b>Return due today</b><small>Midnight Blue Pishwas · Sana Fatima</small></p></div><div><span className="notification-dot notification-orange" /><p><b>Payment follow-up</b><small>PKR 2,500 due · Ayesha Khan</small></p></div><button onClick={() => { setActivePage("returns"); setNotificationsOpen(false); }}>View all alerts <ChevronRight size={14} /></button></div>}</div>
+          {notificationsOpen && <div className="notification-popover"><strong>Notifications</strong>
+            {configuredNotifications.returns && <div><span className="notification-dot" /><p><b>Return due today</b><small>Midnight Blue Pishwas · Sana Fatima</small></p></div>}
+            {configuredNotifications.payments && <div><span className="notification-dot notification-orange" /><p><b>Payment follow-up</b><small>PKR 2,500 due · Ayesha Khan</small></p></div>}
+            {configuredNotifications.bookings && <div><span className="notification-dot" /><p><b>Booking pickup and return updates</b><small>Track each booking from reservation to return.</small></p></div>}
+            {!configuredNotifications.bookings && !configuredNotifications.payments && !configuredNotifications.returns && <p>No notification types are enabled.</p>}
+            <button onClick={() => { setActivePage("returns"); setNotificationsOpen(false); }}>View all alerts <ChevronRight size={14} /></button></div>}</div>
         <span className="topbar-divider" /><ProfileMenu role={role} profile={currentProfile} onProfile={() => nav("profile")} onSignOut={signOut} /></div></header>
       <div className="page-content">{content}<footer className="app-footer"><span>© 2026 Dulhan Rani Boutique</span><span className={`sync-indicator sync-${syncStatus}`} role="status" title={syncError}><i />{syncStatus === "synced" ? "Cloud synced · local backup saved" : syncStatus === "syncing" ? "Syncing · local backup saved" : "Cloud unavailable · saved locally"}</span><span>Made for your boutique <span className="heart">♥</span></span></footer></div>
     </main>
@@ -862,7 +935,11 @@ export default function App() {
       <form className="form-grid" onSubmit={handleCustomerSubmit}><Field label="Customer name *"><input name="name" placeholder="Full name" required /></Field><Field label="Phone number 1 *"><input name="phone" type="tel" placeholder="+92 300 0000000" required /></Field><Field label="Phone number 2 (optional)"><input name="phone2" type="tel" placeholder="+92 300 0000000" /></Field><Field label="CNIC number"><input name="cnic" placeholder="Optional" /></Field><Field label="Area / street address *"><input name="address" placeholder="e.g. Gulberg III" required /></Field><Field label="City *"><input name="city" list="customer-cities" placeholder="Select or type a city" required /><CityOptions /></Field><div className="modal-actions"><Button variant="outline" onClick={() => setModal(null)}>Cancel</Button><Button type="submit" icon={Plus}>Save customer</Button></div></form>
     </Modal>}
     {modal?.type === "payment" && <Modal title="Record a payment" description="Add a payment against an active rental booking." onClose={() => setModal(null)}>
-      <form className="form-grid" onSubmit={handlePaymentSubmit}><Field label="Booking *" className="field-full"><select name="booking" required defaultValue=""><option value="" disabled>Choose booking</option>{bookings.filter((b) => b.amount > b.paid).map((booking) => <option key={booking.id} value={booking.id}>{booking.id} · {booking.customer} · Due {currency(booking.amount - booking.paid)}</option>)}</select></Field><Field label="Amount received (PKR) *"><input name="amount" type="number" min="1" required placeholder="2500" /></Field><Field label="Payment method *"><select name="method"><option>Cash</option><option>Bank transfer</option><option>JazzCash</option><option>Easypaisa</option></select></Field><div className="modal-actions"><Button variant="outline" onClick={() => setModal(null)}>Cancel</Button><Button type="submit" icon={Wallet}>Record payment</Button></div></form>
+      <form className="form-grid" onSubmit={handlePaymentSubmit} key={modal.bookingId || "all-bookings"}><Field label="Booking *" className="field-full"><select name="booking" required defaultValue={modal.bookingId || ""} onChange={(event) => {
+        const selectedBooking = bookings.find((item) => item.id === event.target.value);
+        const amountField = event.currentTarget.form?.elements.namedItem("amount");
+        if (selectedBooking && amountField) amountField.value = String(Math.max(selectedBooking.amount - selectedBooking.paid, 0));
+      }}><option value="" disabled>Choose booking</option>{bookings.filter((b) => b.amount > b.paid).map((booking) => <option key={booking.id} value={booking.id}>{booking.id} · {booking.customer} · Due {currency(booking.amount - booking.paid)}</option>)}</select></Field><Field label="Amount received (PKR) *"><input name="amount" type="number" min="1" required placeholder="2500" defaultValue={modal.bookingId ? Math.max((bookings.find((item) => item.id === modal.bookingId)?.amount || 0) - (bookings.find((item) => item.id === modal.bookingId)?.paid || 0), 0) : ""} /></Field><Field label="Payment method *"><select name="method"><option>Cash</option><option>Bank transfer</option><option>JazzCash</option><option>Easypaisa</option></select></Field><div className="modal-actions"><Button variant="outline" onClick={() => setModal(null)}>Cancel</Button><Button type="submit" icon={Wallet}>Record payment</Button></div></form>
     </Modal>}
     {modal?.type === "profile-edit" && <Modal title="Edit my profile" description="Update the name and contact details shown on your account." onClose={() => setModal(null)}>
       <ProfileEditForm key={session.id || "admin"} profile={currentProfile} onSave={handleProfileSave} onCancel={() => setModal(null)} />
@@ -876,9 +953,11 @@ export default function App() {
     {modal?.type === "admin-pin" && <Modal title="Change administrator PIN" description="Confirm your current PIN before choosing a new one." onClose={() => setModal(null)}>
       <AdminPinForm onSave={handleAdminPinUpdate} onCancel={() => setModal(null)} />
     </Modal>}
-    {modal?.type === "booking-detail" && <Modal title="Booking details" description={`${modal.booking.id} · Created by ${modal.booking.staff}`} onClose={() => setModal(null)}>
-      <div className="booking-detail"><div className="detail-highlight"><span><CalendarDays size={18} /></span><div><strong>{modal.booking.customer}</strong><small>{modal.booking.phone}</small></div><Status>{modal.booking.status}</Status></div>
-        <div className="detail-lines"><div><span>Articles</span><strong>{bookingArticleTitles(modal.booking)}</strong><small>{bookingArticleLabels(modal.booking)}</small></div><div><span>Delivery date</span><strong>{readableDate(modal.booking.delivery)}</strong></div><div><span>Event date</span><strong>{readableDate(modal.booking.event)}</strong></div><div><span>Expected return</span><strong>{readableDate(modal.booking.returnDate)}</strong></div><div><span>Measurements</span><strong>{[modal.booking.chest && `Chest ${modal.booking.chest} in`, modal.booking.back && `Back ${modal.booking.back} in`, modal.booking.hip && `Hip ${modal.booking.hip} in`].filter(Boolean).join(" · ") || "Not provided"}</strong></div><div><span>Rental amount</span><strong>{currency(modal.booking.amount)}</strong></div><div><span>Remaining balance</span><strong className={modal.booking.amount > modal.booking.paid ? "due-text" : "paid-text"}>{currency(Math.max(modal.booking.amount - modal.booking.paid, 0))}</strong></div></div>
+    {modal?.type === "booking-detail" && <Modal title="Booking details" description={`${modal.booking.id} · Created by ${modal.booking.staff}`} onClose={() => setModal(null)} className="receipt-modal">
+      <div className="booking-detail"><header className="receipt-brand"><h1>{businessSettings.name || defaultBusinessSettings.name}</h1><p>{businessSettings.address}</p><p>{businessSettings.phone}{businessSettings.email ? ` · ${businessSettings.email}` : ""}</p><strong>Booking receipt · {modal.booking.id}</strong></header>
+        <div className="detail-highlight"><span><CalendarDays size={18} /></span><div><strong>{modal.booking.customer}</strong><small>{modal.booking.phone}</small></div><Status>{modal.booking.status}</Status></div>
+        <div className="detail-lines"><div><span>Articles</span><strong>{bookingArticleTitles(modal.booking)}</strong><small>{bookingArticleLabels(modal.booking)}</small></div><div><span>Delivery date</span><strong>{readableDate(modal.booking.delivery)}</strong></div><div><span>Event date</span><strong>{readableDate(modal.booking.event)}</strong></div><div><span>Expected return</span><strong>{readableDate(modal.booking.returnDate)}</strong></div><div><span>Measurements</span><strong>{[modal.booking.chest && `Chest ${modal.booking.chest} in`, modal.booking.back && `Back ${modal.booking.back} in`, modal.booking.hip && `Hip ${modal.booking.hip} in`].filter(Boolean).join(" · ") || "Not provided"}</strong></div><div><span>Rental amount</span><strong>{currency(modal.booking.amount)}</strong></div><div><span>Paid to date</span><strong>{currency(modal.booking.paid)}</strong></div><div><span>Remaining balance</span><strong className={modal.booking.amount > modal.booking.paid ? "due-text" : "paid-text"}>{currency(Math.max(modal.booking.amount - modal.booking.paid, 0))}</strong></div></div>
+        {businessSettings.receiptFooter && <p className="receipt-footer">{businessSettings.receiptFooter}</p>}
         <Button variant="outline" icon={FileText} onClick={() => window.print()}>Print booking receipt</Button>{role === "admin" && <div className="booking-detail-admin-actions"><Button variant="outline" icon={Pencil} onClick={() => openEditBooking(modal.booking)}>Edit booking</Button><Button variant="outline" icon={Trash2} onClick={() => handleBookingDelete(modal.booking)}>Delete booking</Button></div>}</div></Modal>}
     {toast && <div className="toast" role="status" aria-live="polite"><span><Check size={18} /></span><strong>{toast}</strong><button onClick={() => { window.clearTimeout(toastTimer.current); setToast(""); }} aria-label="Dismiss"><X size={17} /></button></div>}
   </div>;
@@ -888,6 +967,8 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
   const [selectedArticleIds, setSelectedArticleIds] = useState(booking ? bookingArticleIds(booking) : []);
   const selectedArticles = articles.filter((item) => selectedArticleIds.includes(item.id));
   const [articleSearch, setArticleSearch] = useState("");
+  const matchingArticles = articles.filter((item) => (item.status === "Available" || selectedArticleIds.includes(item.id))
+    && (!articleSearch.trim() || `${item.id} ${item.name} ${item.category}`.toLowerCase().includes(articleSearch.trim().toLowerCase())));
   const initialCustomerId = booking?.customerId || customers.find((customer) => customer.name === booking?.customer)?.id || "";
   const [customerChoice, setCustomerChoice] = useState(initialCustomerId);
   const [showNewCustomer, setShowNewCustomer] = useState(false);
@@ -917,9 +998,7 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
   return <form className="form-grid" onSubmit={(event) => onSubmit(event, booking?.id || null)}>
     <div className="booking-article-picker field-full"><strong>Select articles * <span>Search by article name or number. Choose one or more items.</span></strong>
       <label className="booking-article-search"><Search size={15} /><input type="search" aria-label="Search articles for booking" placeholder="Type article name or number..." value={articleSearch} onChange={(event) => setArticleSearch(event.target.value)} /></label>
-      <div className="booking-article-options">{articles.filter((item) => (item.status !== "Maintenance" || selectedArticleIds.includes(item.id))
-        && (!articleSearch.trim() || `${item.id} ${item.name} ${item.category}`.toLowerCase().includes(articleSearch.trim().toLowerCase()))
-        && (articleSearch.trim() || selectedArticleIds.includes(item.id))).map((article) => <label className={`booking-article-option${selectedArticleIds.includes(article.id) ? " selected" : ""}`} key={article.id}>
+      <div className="booking-article-options">{matchingArticles.map((article) => <label className={`booking-article-option${selectedArticleIds.includes(article.id) ? " selected" : ""}`} key={article.id}>
         <input type="checkbox" name="articles" value={article.id} checked={selectedArticleIds.includes(article.id)} onChange={(event) => {
           const nextIds = event.target.checked ? [...selectedArticleIds, article.id] : selectedArticleIds.filter((id) => id !== article.id);
           setSelectedArticleIds(nextIds);
@@ -928,8 +1007,7 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
         {article.photo ? <img src={article.photo} alt="" /> : <span className="booking-article-option-placeholder"><Shirt size={18} /></span>}
         <span><b>{article.name}</b><small>{article.id} · {article.category}</small></span><strong>{currency(article.price)}</strong>
       </label>)}
-      {!articleSearch.trim() && selectedArticleIds.length === 0 && <p className="booking-article-empty">Start typing to search your article collection.</p>}
-      {articleSearch.trim() && !articles.some((item) => (item.status !== "Maintenance" || selectedArticleIds.includes(item.id)) && `${item.id} ${item.name} ${item.category}`.toLowerCase().includes(articleSearch.trim().toLowerCase())) && <p className="booking-article-empty">No matching articles found.</p>}
+      {matchingArticles.length === 0 && <p className="booking-article-empty">{articleSearch.trim() ? "No matching articles found." : "No available articles."}</p>}
       </div>
       {selectedArticles.length > 0 && <p className="booking-selected-count">{selectedArticles.length} article{selectedArticles.length === 1 ? "" : "s"} selected</p>}
       <Button type="button" variant="outline" icon={Plus} onClick={onAddArticle}>Add new article to collection</Button>

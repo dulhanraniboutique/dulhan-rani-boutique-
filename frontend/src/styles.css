@@ -603,7 +603,22 @@ tbody tr:hover { background: #fdfbfc; }
   .page-content { max-width: none; padding: 0; }
   body,.panel,.stat-card { background: white; }
   .panel,.stat-card { break-inside: avoid; }
+  body.printing-receipt .app-shell > .sidebar,
+  body.printing-receipt .app-shell > .main-area,
+  body.printing-receipt .app-shell > .mobile-backdrop { display: none !important; }
+  body.printing-receipt .receipt-modal-backdrop { position: static; display: block; padding: 0; background: transparent; }
+  body.printing-receipt .receipt-modal { width: 100%; max-height: none; overflow: visible; padding: 0; border: 0; box-shadow: none; }
+  body.printing-receipt .receipt-modal .modal-heading,
+  body.printing-receipt .receipt-modal .booking-detail-admin-actions { display: none !important; }
+  body.printing-receipt .receipt-modal .booking-detail { gap: 12px; }
+  body.printing-receipt .receipt-brand { display: block; padding: 0 0 12px; border-bottom: 1px solid #ddd; text-align: center; }
+  body.printing-receipt .receipt-brand h1 { margin: 0 0 5px; color: #222; font-size: 22px; }
+  body.printing-receipt .receipt-brand p { margin: 2px 0; color: #444; font-size: 11px; }
+  body.printing-receipt .receipt-brand > strong { display: block; margin-top: 8px; color: #222; font-size: 13px; }
+  body.printing-receipt .receipt-footer { margin: 12px 0 0; border-top: 1px solid #ddd; padding-top: 10px; text-align: center; }
 }
+.receipt-brand { display: none; }
+.receipt-footer { color: #66565e; font-size: 10px; }
 
 .splash-screen { position: fixed; z-index: 100; inset: 0; display: grid; overflow: hidden; place-items: center; background: radial-gradient(ellipse at 50% 43%,#6b304d 0%,#3d1d30 45%,#261722 100%); color: #fff; }
 .splash-halo { position: absolute; width: min(78vw,680px); aspect-ratio: 1; border: 1px solid #ffffff0f; border-radius: 50%; animation: halo-in 1.8s ease-out both; }
@@ -760,4 +775,7 @@ tbody tr:hover { background: #fdfbfc; }
 @media (max-width: 650px) {
   [dir="rtl"] .page-content { line-height: 1.8; }
   [dir="rtl"] .settings-language { text-align: right; }
+  #root .page-content { -webkit-font-smoothing: auto; }
+  #root .page-content :where(p,span,small,td,th,label) { font-weight: 500; }
+  #root .page-content :where(.field > span,.settings-nav button,.settings-save > span,.sub-cell) { font-weight: 600; }
 }
