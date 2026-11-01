@@ -12,6 +12,7 @@ import PhotoUpload from "./PhotoUpload.jsx";
 import { Field } from "./shared.jsx";
 import { makePinRecord, verifyPin, validPin } from "./auth.js";
 import { itemChanges, loadCollection, mergeChanges, persistCollectionChanges, refreshCollection } from "./dataSync.js";
+import { localizeNode } from "./i18n.js";
 
 const currency = (amount) => `PKR ${Number(amount || 0).toLocaleString("en-PK")}`;
 const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -464,12 +465,13 @@ function AdminPinForm({ onSave, onCancel }) {
   </form>;
 }
 
-function SettingsPage() {
+function SettingsPage({ language, onLanguageChange }) {
   const [saved, setSaved] = useState(false);
   return <>
     <PageHeader eyebrow="PREFERENCES" title="Boutique settings" description="Configure business details and defaults for your workspace." />
     <div className="settings-layout"><nav className="settings-nav"><button className="settings-active"><Settings size={16} />Business profile</button><button><ShieldCheck size={16} />Security & access</button><button><Bell size={16} />Notifications</button><button><FileText size={16} />Receipt details</button></nav>
       <section className="panel settings-panel"><div className="panel-heading"><div><h2>Business profile</h2><p>These details appear on booking receipts.</p></div></div>
+        <div className="settings-language"><Field label="Language"><select value={language} onChange={(event) => onLanguageChange(event.target.value)}><option value="en">English</option><option value="ur">Urdu</option></select></Field><p>English is the default language. Choose Urdu to switch the interface.</p></div>
         <div className="settings-fields"><Field label="Boutique name"><input defaultValue="Dulhan Rani Boutique" /></Field><Field label="Contact phone"><input defaultValue="+92 300 0000000" /></Field><Field label="Email address"><input defaultValue="hello@dulhanrani.pk" /></Field><Field label="Currency"><select defaultValue="PKR — Pakistani Rupee"><option>PKR — Pakistani Rupee</option></select></Field><Field label="Boutique address" className="field-full"><textarea rows="3" defaultValue="Zargran,Sheikhupura, Pakistan" /></Field></div>
         <div className="settings-save"><span>{saved ? "Changes saved in this demo." : "Changes are stored in this browser demo."}</span><Button onClick={() => setSaved(true)} icon={Check}>Save changes</Button></div></section></div>
   </>;
@@ -550,13 +552,37 @@ export default function App() {
   const [modal, setModal] = useState(null);
   const [quickCreatedArticleId, setQuickCreatedArticleId] = useState("");
   const [toast, setToast] = useState("");
+  const [language, setLanguage] = useLocalData("language", "en");
+  const toastTimer = useRef(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   useEffect(() => {
     const timer = window.setTimeout(() => setBootStage("access"), 1900);
     return () => window.clearTimeout(timer);
   }, []);
-  const notify = (message) => { setToast(message); window.setTimeout(() => setToast(""), 3000); };
+  useEffect(() => {
+    const root = document.documentElement;
+    const content = document.getElementById("root");
+    const isUrdu = language === "ur";
+    root.lang = isUrdu ? "ur" : "en";
+    root.dir = isUrdu ? "rtl" : "ltr";
+    if (!content) return undefined;
+    localizeNode(content, language);
+    const observer = new MutationObserver((records) => {
+      records.forEach((record) => {
+        if (record.type === "characterData") localizeNode(record.target, language);
+        else if (record.type === "attributes") localizeNode(record.target, language);
+        else record.addedNodes.forEach((node) => localizeNode(node, language));
+      });
+    });
+    observer.observe(content, { attributes: true, attributeFilter: ["placeholder", "aria-label", "title"], characterData: true, childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [language]);
+  const notify = (message) => {
+    setToast(message);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(""), 5000);
+  };
   const role = session?.role || "admin";
   const activeSalesperson = session?.role === "sales" ? salespeople.find((person) => person.id === session.id) : null;
   const currentProfile = session?.role === "sales" ? activeSalesperson || profile : profile;
@@ -795,7 +821,7 @@ export default function App() {
       case "calendar": return <CalendarPage bookings={bookings} onNew={() => setModal({ type: "booking" })} />;
       case "reports": return <ReportsPage bookings={bookings} payments={payments} articles={articles} />;
       case "staff": return <StaffPage salespeople={salespeople} onAdd={openAddStaff} onEdit={(person) => setModal({ type: "staff-edit", person })} onToggle={handleStaffToggle} onDelete={handleStaffDelete} onChangeAdminPin={() => setModal({ type: "admin-pin" })} />;
-      case "settings": return <SettingsPage />;
+      case "settings": return <SettingsPage language={language} onLanguageChange={setLanguage} />;
       case "profile": return <ProfilePage profile={currentProfile} role={role} onEdit={() => setModal({ type: "profile-edit" })} />;
       default: return <Dashboard articles={articles} bookings={bookings} role={role} profile={currentProfile} onNavigate={nav} />;
     }
@@ -854,7 +880,7 @@ export default function App() {
       <div className="booking-detail"><div className="detail-highlight"><span><CalendarDays size={18} /></span><div><strong>{modal.booking.customer}</strong><small>{modal.booking.phone}</small></div><Status>{modal.booking.status}</Status></div>
         <div className="detail-lines"><div><span>Articles</span><strong>{bookingArticleTitles(modal.booking)}</strong><small>{bookingArticleLabels(modal.booking)}</small></div><div><span>Delivery date</span><strong>{readableDate(modal.booking.delivery)}</strong></div><div><span>Event date</span><strong>{readableDate(modal.booking.event)}</strong></div><div><span>Expected return</span><strong>{readableDate(modal.booking.returnDate)}</strong></div><div><span>Measurements</span><strong>{[modal.booking.chest && `Chest ${modal.booking.chest} in`, modal.booking.back && `Back ${modal.booking.back} in`, modal.booking.hip && `Hip ${modal.booking.hip} in`].filter(Boolean).join(" · ") || "Not provided"}</strong></div><div><span>Rental amount</span><strong>{currency(modal.booking.amount)}</strong></div><div><span>Remaining balance</span><strong className={modal.booking.amount > modal.booking.paid ? "due-text" : "paid-text"}>{currency(Math.max(modal.booking.amount - modal.booking.paid, 0))}</strong></div></div>
         <Button variant="outline" icon={FileText} onClick={() => window.print()}>Print booking receipt</Button>{role === "admin" && <div className="booking-detail-admin-actions"><Button variant="outline" icon={Pencil} onClick={() => openEditBooking(modal.booking)}>Edit booking</Button><Button variant="outline" icon={Trash2} onClick={() => handleBookingDelete(modal.booking)}>Delete booking</Button></div>}</div></Modal>}
-    {toast && <div className="toast"><span><Check size={15} /></span>{toast}<button onClick={() => setToast("")} aria-label="Dismiss"><X size={15} /></button></div>}
+    {toast && <div className="toast" role="status" aria-live="polite"><span><Check size={18} /></span><strong>{toast}</strong><button onClick={() => { window.clearTimeout(toastTimer.current); setToast(""); }} aria-label="Dismiss"><X size={17} /></button></div>}
   </div>;
 }
 
