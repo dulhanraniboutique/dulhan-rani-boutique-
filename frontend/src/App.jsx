@@ -28,6 +28,21 @@ const bookingArticleIds = (booking) => booking.articles?.map((article) => typeof
 const bookingArticleNames = (booking) => booking.articles?.map((article) => typeof article === "string" ? article : article.name).filter(Boolean) || (booking.articleName ? [booking.articleName] : []);
 const bookingArticleLabels = (booking) => bookingArticleIds(booking).join(", ");
 const bookingArticleTitles = (booking) => bookingArticleNames(booking).join(", ");
+const bookingArticleRecords = (booking, inventory) => {
+  const savedArticles = booking.articles?.length
+    ? booking.articles
+    : String(booking.article || "").split(",").map((id) => id.trim()).filter(Boolean);
+  return savedArticles.map((savedArticle, index) => {
+    const id = typeof savedArticle === "string" ? savedArticle : savedArticle.id;
+    const inventoryArticle = inventory.find((article) => article.id === id);
+    const name = typeof savedArticle === "string" ? inventoryArticle?.name : savedArticle.name;
+    return {
+      id: id || `article-${index + 1}`,
+      name: name || booking.articleName?.split(",")[index]?.trim() || id || "Article",
+      photo: (typeof savedArticle === "string" ? "" : savedArticle.photo) || inventoryArticle?.photo || "",
+    };
+  });
+};
 const dateAfter = (date, days) => {
   const result = new Date(`${date}T00:00:00Z`);
   result.setUTCDate(result.getUTCDate() + days);
@@ -52,6 +67,7 @@ const navGroups = [
   { label: "OPERATIONS", items: [
     { id: "payments", label: "Payments", icon: Wallet },
     { id: "returns", label: "Returns & tracking", icon: RotateCcw },
+    { id: "tomorrow", label: "Delivery prep", icon: Truck },
     { id: "calendar", label: "Calendar", icon: CalendarDays },
   ] },
   { label: "MANAGEMENT", adminOnly: true, items: [
@@ -141,7 +157,7 @@ function useSyncedData(collection, fallback) {
 
 function Status({ children }) {
   const normalized = String(children).toLowerCase();
-  const className = normalized.includes("available") || normalized.includes("returned") || normalized === "paid"
+  const className = normalized.includes("available") || normalized.includes("returned") || normalized === "paid" || normalized === "ready"
     ? "green"
     : normalized.includes("out") || normalized.includes("due") || normalized.includes("maintenance") || normalized.includes("overdue")
       ? "amber"
@@ -173,7 +189,9 @@ function Modal({ title, description, onClose, children, wide = false, className 
 }
 
 function Dashboard({ articles, bookings, role, profile, onNavigate }) {
-  const due = bookings.reduce((sum, booking) => sum + Math.max(booking.amount - booking.paid, 0), 0);
+  const due = bookings
+    .filter((booking) => !["Returned", "Cancelled"].includes(booking.status))
+    .reduce((sum, booking) => sum + Math.max(booking.amount - booking.paid, 0), 0);
   const recent = [...bookings].slice(0, 4);
   return <>
     <PageHeader eyebrow={`${role === "admin" ? "ADMINISTRATOR" : "SALESPERSON"} OVERVIEW`} title={`Good morning, ${profile.name.split(" ")[0]} ✨`}
@@ -187,8 +205,8 @@ function Dashboard({ articles, bookings, role, profile, onNavigate }) {
     <div className="stats-grid">
       <StatCard label="Total articles" value={articles.length} note="Across all categories" icon={Shirt} tone="plum" trend="+2 this month" />
       <StatCard label="Active bookings" value={bookings.filter((booking) => booking.status !== "Returned").length} note="Currently in your diary" icon={CalendarDays} tone="blue" trend="3 upcoming" />
-      <StatCard label="Today's deliveries" value={bookings.filter((booking) => booking.delivery === today).length + 2} note="Make sure each is ready" icon={Truck} tone="orange" trend="View checklist" />
-      <StatCard label="Outstanding balance" value={currency(due + 6500)} note="Across active bookings" icon={CircleDollarSign} tone="green" trend="View payments" />
+      <StatCard label="Today's deliveries" value={bookings.filter((booking) => booking.delivery === today && booking.status === "Confirmed").length} note="Make sure each is ready" icon={Truck} tone="orange" trend="View checklist" onTrendClick={() => onNavigate("today-deliveries")} />
+      <StatCard label="Outstanding balance" value={currency(due)} note="Across active bookings" icon={CircleDollarSign} tone="green" trend="View payments" />
     </div>
     <div className="dashboard-grid">
       <section className="panel revenue-panel">
@@ -214,8 +232,8 @@ function Dashboard({ articles, bookings, role, profile, onNavigate }) {
       <section className="panel table-panel">
         <div className="panel-heading"><div><h2>Recent bookings</h2><p>Your latest rental activity</p></div>
           <button className="text-button" onClick={() => onNavigate("bookings")}>View bookings <ChevronRight size={15} /></button></div>
-        <div className="table-scroll"><table><thead><tr><th>BOOKING</th><th>CUSTOMER</th><th>ARTICLE</th><th>EVENT DATE</th><th>STATUS</th></tr></thead>
-          <tbody>{recent.map((booking) => <tr key={booking.id}><td className="strong-cell">{booking.id}</td><td>{booking.customer}</td><td>{bookingArticleLabels(booking)}</td><td>{readableDate(booking.event)}</td><td><Status>{booking.status}</Status></td></tr>)}</tbody></table></div>
+        <div className="table-scroll"><table><thead><tr><th>BOOKING</th><th>CUSTOMER</th><th>ARTICLE</th><th>BOOKING DATE</th><th>DELIVERY DATE</th><th>RETURN DATE</th><th>STATUS</th></tr></thead>
+          <tbody>{recent.map((booking) => <tr key={booking.id}><td className="strong-cell">{booking.id}</td><td>{booking.customer}</td><td>{bookingArticleLabels(booking)}</td><td>{readableDate(booking.bookingDate)}</td><td>{readableDate(booking.delivery)}</td><td>{readableDate(booking.returnDate)}</td><td><Status>{booking.status}</Status></td></tr>)}</tbody></table></div>
       </section>
       <section className="panel stock-panel">
         <div className="panel-heading"><div><h2>Article availability</h2><p>Inventory at a glance</p></div><button className="text-button" onClick={() => onNavigate("articles")}>Manage <ChevronRight size={15} /></button></div>
@@ -230,9 +248,10 @@ function Dashboard({ articles, bookings, role, profile, onNavigate }) {
   </>;
 }
 
-function StatCard({ label, value, note, icon: Icon, tone, trend }) {
+function StatCard({ label, value, note, icon: Icon, tone, trend, onTrendClick }) {
   return <article className="stat-card"><div className="stat-top"><span>{label}</span><span className={`stat-icon icon-${tone}`}><Icon size={18} /></span></div>
-    <strong className="stat-value">{value}</strong><div className="stat-footer"><span>{note}</span><span className="stat-trend">{trend}</span></div></article>;
+    <strong className="stat-value">{value}</strong><div className="stat-footer"><span>{note}</span>
+      {onTrendClick ? <button className="stat-trend stat-trend-button" onClick={onTrendClick}>{trend}</button> : <span className="stat-trend">{trend}</span>}</div></article>;
 }
 
 function TimelineItem({ time, title, detail, tone }) {
@@ -271,23 +290,26 @@ function ArticleCard({ article, onEdit }) {
       <div className="article-card-footer"><span>Min. order <strong>{currency(article.minOrder)}</strong></span><button aria-label={`Edit ${article.name}`} onClick={() => onEdit(article)}><Pencil size={15} /></button></div></div></article>;
 }
 
-function BookingsPage({ bookings, query, onQueryChange, onNew, onView, isAdmin, onEdit, onDelete, onStatusChange, onRecordPayment, onPrintReceipt }) {
+function BookingsPage({ bookings, query, onQueryChange, onNew, onView, isAdmin, currentUserId, currentUserName, onEdit, onDelete, onStatusChange, onRecordPayment }) {
   const [filter, setFilter] = useState("All bookings");
-  const [eventDate, setEventDate] = useState("");
-  const filtered = bookings.filter((item) => `${item.id} ${item.customer} ${bookingArticleLabels(item)} ${bookingArticleTitles(item)}`.toLowerCase().includes(query.toLowerCase())
+  const [deliveryDate, setDeliveryDate] = useState("");
+  const visibleBookings = isAdmin ? bookings : bookings.filter((booking) => booking.createdById
+    ? booking.createdById === currentUserId
+    : (booking.createdBy || booking.staff) === currentUserName);
+  const filtered = visibleBookings.filter((item) => `${item.id} ${item.customer} ${bookingArticleLabels(item)} ${bookingArticleTitles(item)}`.toLowerCase().includes(query.toLowerCase())
     && (filter === "All bookings" || item.status === filter)
-    && (!eventDate || (item.event >= eventDate && item.event <= dateAfter(eventDate, 1))));
+    && (!deliveryDate || (item.delivery >= deliveryDate && item.delivery <= dateAfter(deliveryDate, 1))));
   return <>
-    <PageHeader eyebrow="RENTAL MANAGEMENT" title="Bookings" description="Track reservations, deliveries, event dates and returns." action actionLabel="New booking" onAction={onNew} />
-    <div className="booking-stats"><MiniMetric label="All bookings" value={bookings.length} /><MiniMetric label="Confirmed" value={bookings.filter((b) => b.status === "Confirmed").length} tone="plum" /><MiniMetric label="Currently out" value={bookings.filter((b) => b.status === "Out").length} tone="orange" /><MiniMetric label="Returned" value={bookings.filter((b) => b.status === "Returned").length} tone="green" /></div>
+    <PageHeader eyebrow="RENTAL MANAGEMENT" title={isAdmin ? "Bookings" : "My bookings"} description="Track reservations, delivery dates and returns." action actionLabel="New booking" onAction={onNew} />
+    <div className="booking-stats"><MiniMetric label="All bookings" value={visibleBookings.length} /><MiniMetric label="Confirmed" value={visibleBookings.filter((b) => b.status === "Confirmed").length} tone="plum" /><MiniMetric label="Currently out" value={visibleBookings.filter((b) => b.status === "Out").length} tone="orange" /><MiniMetric label="Returned" value={visibleBookings.filter((b) => b.status === "Returned").length} tone="green" /></div>
     <div className="toolbar"><div className="toolbar-search"><Search size={16} /><input placeholder="Search booking, customer or article..." value={query} onChange={(event) => onQueryChange(event.target.value)} /></div>
       <div className="toolbar-controls"><select value={filter} onChange={(event) => setFilter(event.target.value)}><option>All bookings</option><option>Confirmed</option><option>Out</option><option>Returned</option></select>
         <Button variant="outline" icon={Download} onClick={() => window.print()}>Export</Button></div></div>
-    <section className="booking-date-filter-panel"><div><strong>Filter bookings by event date</strong><span>Select a date to show its bookings and the following day.</span></div><label><CalendarDays size={16} /><input aria-label="Filter bookings from selected event date through next day" type="date" value={eventDate} onChange={(event) => setEventDate(event.target.value)} /></label>{eventDate && <><span className="booking-date-range">Showing {readableDate(eventDate)} – {readableDate(dateAfter(eventDate, 1))}</span><Button variant="outline" onClick={() => setEventDate("")}>Clear date</Button></>}</section>
-    <section className="panel table-panel"><div className="table-scroll"><table><thead><tr><th>BOOKING ID</th><th>CUSTOMER</th><th>ARTICLES</th><th>DELIVERY</th><th>EVENT</th><th>RETURN</th><th>AMOUNT / DUE</th><th>STATUS</th><th></th></tr></thead>
+    <section className="booking-date-filter-panel"><div><strong>Filter bookings by delivery date</strong><span>Select a date to show its bookings and the following day.</span></div><label><CalendarDays size={16} /><input aria-label="Filter bookings from selected delivery date through next day" type="date" value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} /></label>{deliveryDate && <><span className="booking-date-range">Showing {readableDate(deliveryDate)} – {readableDate(dateAfter(deliveryDate, 1))}</span><Button variant="outline" onClick={() => setDeliveryDate("")}>Clear date</Button></>}</section>
+    <section className="panel table-panel"><div className="table-scroll"><table><thead><tr><th>BOOKING DATE</th><th>BOOKING ID</th><th>CUSTOMER</th><th>ARTICLES</th><th>DELIVERY</th><th>RETURN</th><th>CREATED BY</th><th>AMOUNT / DUE</th><th>STATUS</th><th></th></tr></thead>
       <tbody>{filtered.map((booking) => <tr key={booking.id} onClick={() => onView(booking)} className="clickable-row">
-        <td className="strong-cell">{booking.id}</td><td><strong>{booking.customer}</strong><small className="sub-cell">{booking.phone}</small></td>
-        <td><span className="article-id">{bookingArticleLabels(booking)}</span><small className="sub-cell">{bookingArticleTitles(booking)}</small></td><td>{readableDate(booking.delivery)}</td><td>{readableDate(booking.event)}</td><td>{readableDate(booking.returnDate)}</td>
+        <td>{readableDate(booking.bookingDate)}</td><td className="strong-cell">{booking.id}</td><td><strong>{booking.customer}</strong><small className="sub-cell">{booking.phone}</small></td>
+        <td><span className="article-id">{bookingArticleLabels(booking)}</span><small className="sub-cell">{bookingArticleTitles(booking)}</small></td><td>{readableDate(booking.delivery)}</td><td>{readableDate(booking.returnDate)}</td><td>{booking.createdBy || booking.staff || "—"}</td>
         <td><strong>{currency(booking.amount)}</strong><small className="sub-cell">{booking.amount > booking.paid ? `${currency(booking.amount - booking.paid)} due` : "Paid"}</small></td>
         <td><Status>{booking.status}</Status></td><td><div className="booking-row-actions"><button className="icon-button" onClick={(event) => { event.stopPropagation(); onView(booking); }} aria-label="View booking"><Eye size={16} /></button>
           {booking.status === "Confirmed" && (booking.amount > booking.paid
@@ -319,19 +341,66 @@ function CustomersPage({ customers, query, onQueryChange, onAdd }) {
   </>;
 }
 
-function PaymentsPage({ payments, bookings, query, onQueryChange, onAdd }) {
-  const due = bookings.reduce((sum, item) => sum + Math.max(item.amount - item.paid, 0), 0);
-  const total = payments.reduce((sum, payment) => sum + payment.amount, 0);
-  const filtered = payments.filter((item) => `${item.id} ${item.booking} ${item.customer}`.toLowerCase().includes(query.toLowerCase()));
+function PaymentsPage({ payments, bookings, query, onQueryChange, onAdd, isAdmin, currentUserId, currentUserName, salespeople, adminProfile }) {
+  const [reportDate, setReportDate] = useState(today);
+  const visibleBookings = isAdmin ? bookings : bookings.filter((booking) => booking.createdById
+    ? booking.createdById === currentUserId
+    : (booking.createdBy || booking.staff) === currentUserName);
+  const visiblePayments = isAdmin ? payments : payments.filter((payment) => payment.receivedById
+    ? payment.receivedById === currentUserId
+    : payment.receivedBy === currentUserName);
+  const due = visibleBookings.filter((item) => !["Returned", "Cancelled"].includes(item.status))
+    .reduce((sum, item) => sum + Math.max(item.amount - item.paid, 0), 0);
+  const total = visiblePayments.reduce((sum, payment) => sum + payment.amount, 0);
+  const filtered = visiblePayments.filter((item) => `${item.id} ${item.booking} ${item.customer} ${item.receivedBy}`.toLowerCase().includes(query.toLowerCase()));
+  const staff = [{ id: "admin", name: adminProfile.name, role: "Administrator" },
+    ...salespeople.map((person) => ({ id: person.id, name: person.name, role: "Salesperson" }))];
+  const staffIds = new Set(staff.map((person) => person.id));
+  const staffNames = new Set(staff.map((person) => person.name));
+  const includeFormerStaff = (id, name) => {
+    if (id && !staffIds.has(id)) {
+      staff.push({ id, name: name || "Former staff", role: "Former staff" });
+      staffIds.add(id);
+      staffNames.add(name);
+    } else if (!id && name && !staffNames.has(name)) {
+      staff.push({ id: `legacy:${name}`, name, role: "Recorded staff" });
+      staffNames.add(name);
+    }
+  };
+  bookings.forEach((booking) => includeFormerStaff(booking.createdById, booking.createdBy || booking.staff));
+  payments.forEach((payment) => includeFormerStaff(payment.receivedById, payment.receivedBy));
+  const receivedByStaff = (payment, person) => payment.receivedById
+    ? payment.receivedById === person.id
+    : payment.receivedBy === person.name;
+  const bookedByStaff = (booking, person) => booking.createdById
+    ? booking.createdById === person.id
+    : (booking.createdBy || booking.staff) === person.name;
+  const dailyPayments = payments.filter((payment) => payment.date === reportDate);
+  const dailyTotal = dailyPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const dailyBookings = bookings.filter((booking) => booking.bookingDate === reportDate);
   return <>
-    <PageHeader eyebrow="FINANCE" title="Payments" description="Record instalments and keep a clear view of every balance." action actionLabel="Record payment" onAction={onAdd} />
-    <div className="finance-cards"><FinanceCard label="Collected this month" value={currency(total + 18400)} note="Across all payment methods" icon={ArrowDownLeft} tone="green" /><FinanceCard label="Outstanding balance" value={currency(due + 6500)} note="Across active bookings" icon={Clock3} tone="orange" /><FinanceCard label="Transactions" value={payments.length + 36} note="This month" icon={CreditCard} tone="plum" /></div>
+    <PageHeader eyebrow="FINANCE" title={isAdmin ? "Payments" : "Payments received"} description="Track every payment and the team member who collected it." action actionLabel="Record payment" onAction={onAdd} />
+    <div className="finance-cards"><FinanceCard label="Total collected" value={currency(total)} note={isAdmin ? "All recorded receipts" : "Receipts collected by you"} icon={ArrowDownLeft} tone="green" /><FinanceCard label="Outstanding balance" value={currency(due)} note="Across your active bookings" icon={Clock3} tone="orange" /><FinanceCard label="Transactions" value={visiblePayments.length} note="Recorded receipts" icon={CreditCard} tone="plum" /></div>
     <div className="toolbar"><div className="toolbar-search"><Search size={16} /><input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search by receipt, booking or customer..." /></div><Button variant="outline" icon={Download} onClick={() => window.print()}>Export statement</Button></div>
     <section className="panel table-panel"><div className="panel-heading table-title"><div><h2>Payment history</h2><p>Recent transactions and receipts</p></div><span className="subtle-count">{filtered.length} transactions</span></div>
       <div className="table-scroll"><table><thead><tr><th>RECEIPT</th><th>BOOKING</th><th>CUSTOMER</th><th>DATE</th><th>METHOD</th><th>RECEIVED BY</th><th>AMOUNT</th></tr></thead><tbody>
         {filtered.map((payment) => <tr key={payment.id}><td className="strong-cell">{payment.id}</td><td>{payment.booking}</td><td>{payment.customer}</td><td>{readableDate(payment.date)}</td><td><span className="payment-method"><CircleDollarSign size={15} />{payment.method}</span></td><td>{payment.receivedBy}</td><td className="money-cell">{currency(payment.amount)}</td></tr>)}
       </tbody></table>{filtered.length === 0 && <EmptyState title="No payments found" detail="Recorded payments will appear here." />}</div></section>
-    <section className="panel due-panel"><div className="due-panel-icon"><AlertTriangle size={18} /></div><div><strong>Balances to follow up</strong><span>There are {bookings.filter((b) => b.amount > b.paid && b.status !== "Returned").length} active bookings with remaining payments.</span></div><strong>{currency(due + 6500)}</strong></section>
+    <section className="panel due-panel"><div className="due-panel-icon"><AlertTriangle size={18} /></div><div><strong>Balances to follow up</strong><span>There are {visibleBookings.filter((b) => b.amount > b.paid && !["Returned", "Cancelled"].includes(b.status)).length} active bookings with remaining payments.</span></div><strong>{currency(due)}</strong></section>
+    {isAdmin && <section className="panel staff-cash-panel"><div className="panel-heading table-title"><div><h2>Staff collection summary</h2><p>Compare lifetime activity with bookings and payments for the selected day.</p></div><label><span>Day-end date</span><input aria-label="Staff summary date" type="date" value={reportDate} onChange={(event) => setReportDate(event.target.value)} /></label></div>
+      <div className="staff-cash-total"><span>Total received on {readableDate(reportDate)}</span><strong>{currency(dailyTotal)}</strong><small>{dailyPayments.length} payment{dailyPayments.length === 1 ? "" : "s"} · {dailyBookings.length} booking{dailyBookings.length === 1 ? "" : "s"} created</small></div>
+      <div className="table-scroll"><table><thead><tr><th>TEAM MEMBER</th><th>ALL BOOKINGS</th><th>BOOKINGS THIS DAY</th><th>PAYMENTS THIS DAY</th><th>COLLECTED ALL TIME</th><th>COLLECTED THIS DAY</th></tr></thead><tbody>
+        {staff.map((person) => {
+          const memberBookings = bookings.filter((booking) => bookedByStaff(booking, person));
+          const memberPayments = payments.filter((payment) => receivedByStaff(payment, person));
+          const dayBookings = dailyBookings.filter((booking) => bookedByStaff(booking, person));
+          const dayPayments = dailyPayments.filter((payment) => receivedByStaff(payment, person));
+          const memberTotal = memberPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+          const dayTotal = dayPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+          return <tr key={person.id}><td><strong>{person.name}</strong><small className="sub-cell">{person.role}</small></td><td>{memberBookings.length}</td><td>{dayBookings.length}</td><td>{dayPayments.length}</td><td className="money-cell">{currency(memberTotal)}</td><td className="money-cell">{currency(dayTotal)}</td></tr>;
+        })}
+      </tbody></table></div>
+    </section>}
   </>;
 }
 
@@ -355,25 +424,95 @@ function ReturnsPage({ bookings, onReturn }) {
   </>;
 }
 
+function TomorrowDeliveriesPage({ bookings, articles, dateRange, onRangeChange, onToggleReady }) {
+  const deliveries = bookings
+    .filter((booking) => booking.delivery >= dateRange.from && booking.delivery <= dateRange.to && !["Out", "Returned", "Cancelled"].includes(booking.status))
+    .map((booking) => ({ ...booking, deliveryArticles: bookingArticleRecords(booking, articles) }))
+    .sort((left, right) => left.delivery.localeCompare(right.delivery) || left.customer.localeCompare(right.customer));
+  const dressCount = deliveries.reduce((sum, booking) => sum + booking.deliveryArticles.length, 0);
+  const readyCount = deliveries.reduce((sum, booking) => sum + booking.deliveryArticles.filter((article) => booking.prepReadyArticleIds?.includes(article.id)).length, 0);
+  const exportCsv = () => {
+    const rows = [
+      ["Booking", "Customer", "Phone", "Delivery date", "Article ID", "Article name", "Article photo", "Chest (in)", "Back (in)", "Hip (in)", "Special instructions", "Prep status"],
+      ...deliveries.flatMap((booking) => booking.deliveryArticles.map((article) => [
+        booking.id, booking.customer, booking.phone, booking.delivery, article.id, article.name, article.photo,
+        booking.chest, booking.back, booking.hip, booking.notes,
+        booking.prepReadyArticleIds?.includes(article.id) ? "Ready" : "Not ready",
+      ])),
+    ];
+    const csv = rows.map((row) => row.map((value) => {
+      const text = String(value ?? "");
+      const safeText = /^[\t\r ]*[=+\-@]/.test(text) ? `'${text}` : text;
+      return `"${safeText.replace(/"/g, '""')}"`;
+    }).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `delivery-prep-${dateRange.from}-to-${dateRange.to}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  return <>
+    <PageHeader eyebrow="RENTAL OPERATIONS" title="Delivery prep" description="Choose any upcoming delivery range and prepare every dress with its photo, measurements and instructions." />
+    <div className="panel prep-range">
+      <label><span>From date</span><input aria-label="From date" type="date" min={today} value={dateRange.from} onChange={(event) => {
+        const from = event.target.value;
+        onRangeChange({ from, to: dateRange.to < from ? from : dateRange.to });
+      }} /></label>
+      <label><span>To date</span><input aria-label="To date" type="date" min={dateRange.from} value={dateRange.to} onChange={(event) => onRangeChange({ ...dateRange, to: event.target.value })} /></label>
+      <span className="prep-range-hint">Choose any upcoming date range.</span>
+    </div>
+    <div className="prep-summary">
+      <div><strong>{readableDate(dateRange.from)} – {readableDate(dateRange.to)}</strong><span>Delivery date range</span></div>
+      <div><strong>{dressCount}</strong><span>Dresses to prepare</span></div>
+      <div><strong>{deliveries.length}</strong><span>Bookings</span></div>
+      <div><strong>{readyCount} / {dressCount}</strong><span>Ready dresses</span></div>
+      <div className="prep-actions">
+        <Button variant="outline" icon={Download} onClick={exportCsv}>Export CSV</Button>
+        <Button variant="primary" icon={FileText} onClick={() => window.print()}>Print list</Button>
+      </div>
+    </div>
+    {deliveries.length === 0
+      ? <section className="panel"><EmptyState title="No deliveries in this date range" detail="Bookings scheduled in the selected date range will appear here, including their photos, measurements and instructions." /></section>
+      : <div className="prep-list">{deliveries.map((booking) => <article className="panel prep-card" key={booking.id}>
+        <div className="prep-booking-heading"><div><strong>{booking.customer}</strong><span>{booking.phone || "No phone number"} · {booking.id}</span></div><span className="prep-delivery-date">{readableDate(booking.delivery)}</span></div>
+        <div className="prep-articles">{booking.deliveryArticles.map((article) => <div className="prep-article" key={article.id}>
+          {article.photo ? <img src={article.photo} alt={article.name} /> : <span className="prep-image-placeholder"><Shirt size={20} /></span>}
+          <div className="prep-article-copy"><strong>{article.name}</strong><span>{article.id}</span>
+            <div className="prep-ready-actions"><Status>{booking.prepReadyArticleIds?.includes(article.id) ? "Ready" : "Not ready"}</Status>
+              <button className="prep-ready-toggle" onClick={() => onToggleReady(booking.id, article.id)}>{booking.prepReadyArticleIds?.includes(article.id) ? "Mark not ready" : "Mark ready"}</button>
+            </div>
+          </div>
+        </div>)}</div>
+        <div className="prep-details">
+          <div><small>Measurements (inches)</small><span>Chest: {booking.chest || "—"} · Back: {booking.back || "—"} · Hip: {booking.hip || "—"}</span></div>
+          <div><small>Special instructions</small><span>{booking.notes || "No special instructions"}</span></div>
+        </div>
+      </article>)}</div>}
+  </>;
+}
+
 function CalendarPage({ bookings, onNew }) {
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const firstDay = new Date(month.getFullYear(), month.getMonth(), 1);
   const offset = (firstDay.getDay() + 6) % 7;
   const days = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
   const dateString = (day) => `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-  const dayEvents = (day) => bookings.filter((booking) => booking.delivery === dateString(day) || booking.event === dateString(day) || booking.returnDate === dateString(day));
+  const dayEvents = (day) => bookings.filter((booking) => booking.delivery === dateString(day) || booking.returnDate === dateString(day));
   return <>
-    <PageHeader eyebrow="PLANNING" title="Calendar" description="See deliveries, event dates and expected returns in one place." action actionLabel="Add booking" onAction={onNew} />
+    <PageHeader eyebrow="PLANNING" title="Calendar" description="See delivery dates and expected returns in one place." action actionLabel="Add booking" onAction={onNew} />
     <div className="calendar-layout"><section className="panel calendar-panel"><div className="calendar-toolbar"><div><h2>{month.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</h2><span>Rental schedule</span></div>
       <div className="calendar-arrows"><button className="button button-outline" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><ChevronLeft size={17} />Previous</button><button className="button button-outline" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}>Next<ChevronRight size={17} /></button></div></div>
       <div className="calendar-grid">{["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((day) => <div className="calendar-weekday" key={day}>{day}</div>)}
         {Array.from({ length: offset }, (_, i) => <div className="calendar-day empty-day" key={`empty-${i}`} />)}
         {Array.from({ length: days }, (_, i) => { const day = i + 1; const events = dayEvents(day); return <div className={`calendar-day ${dateString(day) === today ? "current-day" : ""}`} key={day}><span className="day-number">{day}</span>
-          {events.slice(0, 2).map((event) => <span className={`calendar-event event-${event.delivery === dateString(day) ? "delivery" : event.returnDate === dateString(day) ? "return" : "event"}`} key={`${event.id}-${day}`}>{event.delivery === dateString(day) ? "Out" : event.returnDate === dateString(day) ? "Return" : "Event"} · {event.customer.split(" ")[0]}</span>)}
+          {events.slice(0, 2).map((event) => <span className={`calendar-event event-${event.delivery === dateString(day) ? "delivery" : "return"}`} key={`${event.id}-${day}`}>{event.delivery === dateString(day) ? "Delivery" : "Return"} · {event.customer.split(" ")[0]}</span>)}
           {events.length > 2 && <small className="more-events">+{events.length - 2} more</small>}</div>; })}
       </div></section>
       <aside className="panel calendar-side"><div className="panel-heading"><div><h2>Upcoming</h2><p>Next in your schedule</p></div></div>
-        <div className="calendar-legend"><span><i className="legend-delivery" />Delivery</span><span><i className="legend-event" />Event date</span><span><i className="legend-return" />Expected return</span></div>
+        <div className="calendar-legend"><span><i className="legend-delivery" />Delivery</span><span><i className="legend-return" />Expected return</span></div>
         {bookings.filter((b) => b.status !== "Returned").slice(0, 4).map((booking) => <div className="upcoming-item" key={booking.id}><div className="upcoming-date"><strong>{new Date(`${booking.delivery}T00:00:00`).getDate()}</strong><span>{new Date(`${booking.delivery}T00:00:00`).toLocaleDateString("en", { month: "short" })}</span></div><div><strong>{booking.customer}</strong><span>{bookingArticleTitles(booking)}</span><small>Delivery · {readableDate(booking.delivery)}</small></div></div>)}
       </aside></div>
   </>;
@@ -587,6 +726,7 @@ export default function App() {
   const [adminPin, setAdminPin] = useLocalData("admin-pin", null);
   const [salespeople, setSalespeople] = useLocalData("salespeople", []);
   const [activePage, setActivePage] = useState("dashboard");
+  const [prepDateRange, setPrepDateRange] = useState(() => ({ from: today, to: dateAfter(today, 1) }));
   const [session, setSession] = useState(null);
   const [bootStage, setBootStage] = useState("splash");
   const [query, setQuery] = useState("");
@@ -633,16 +773,45 @@ export default function App() {
   const role = session?.role || "admin";
   const activeSalesperson = session?.role === "sales" ? salespeople.find((person) => person.id === session.id) : null;
   const currentProfile = session?.role === "sales" ? activeSalesperson || profile : profile;
+  const currentUserId = role === "admin" ? "admin" : session.id;
   const pageTitles = {
-    dashboard: "Dashboard", articles: "Articles", bookings: "Bookings", customers: "Customers",
-    payments: "Payments", returns: "Returns & tracking", calendar: "Calendar", reports: "Reports",
+    dashboard: "Dashboard", articles: "Articles", bookings: role === "admin" ? "Bookings" : "My bookings", customers: "Customers",
+    payments: role === "admin" ? "Payments" : "Payments received", returns: "Returns & tracking", tomorrow: "Delivery prep", calendar: "Calendar", reports: "Reports",
     staff: "Staff & roles", settings: "Settings", profile: "My profile",
   };
-  const visibleGroups = navGroups.filter((group) => !group.adminOnly || role === "admin");
+  const visibleGroups = navGroups
+    .filter((group) => !group.adminOnly || role === "admin")
+    .map((group) => ({
+      ...group,
+      items: group.items.map((item) => ({
+        ...item,
+        label: role === "sales" && item.id === "bookings" ? "My bookings"
+          : role === "sales" && item.id === "payments" ? "Payments received"
+            : item.label,
+      })),
+    }));
   const nav = (page) => {
     if (page === "new-booking") setModal({ type: "booking" });
-    else { setActivePage(page); setQuery(""); }
+    else {
+      if (page === "today-deliveries") {
+        setActivePage("tomorrow");
+        setPrepDateRange({ from: today, to: today });
+      } else {
+        if (page === "tomorrow") setPrepDateRange({ from: today, to: dateAfter(today, 1) });
+        setActivePage(page);
+      }
+      setQuery("");
+    }
     setMobileNav(false);
+  };
+  const togglePrepReady = (bookingId, articleId) => {
+    setBookings((current) => current.map((booking) => {
+      if (booking.id !== bookingId) return booking;
+      const readyIds = new Set(booking.prepReadyArticleIds || []);
+      if (readyIds.has(articleId)) readyIds.delete(articleId);
+      else readyIds.add(articleId);
+      return { ...booking, prepReadyArticleIds: [...readyIds] };
+    }));
   };
   const handleAdminSetup = async ({ name, pin }) => {
     const pinRecord = await makePinRecord(pin);
@@ -738,9 +907,8 @@ export default function App() {
     if (editingBookingId && role !== "admin") { notify("Only an administrator can edit bookings."); return; }
     if (!selectedArticles.length || selectedArticles.length !== selectedIds.length || !customer || (editingBookingId && !existing)) { notify("Choose a customer and at least one valid article."); return; }
     const delivery = form.get("delivery"), returnDate = form.get("returnDate");
-    const eventDate = form.get("event");
-    if (returnDate < delivery || eventDate < delivery || eventDate > returnDate) {
-      notify("Check the booking dates: event and return dates must follow delivery.");
+    if (returnDate < delivery) {
+      notify("Check the booking dates: return date must be on or after delivery.");
       return;
     }
     const shouldCheckAvailability = !existing || !["Returned", "Cancelled"].includes(existing.status);
@@ -754,7 +922,32 @@ export default function App() {
     if (amount < paid) { notify("Rental amount cannot be less than the advance already paid."); return; }
     if (existing && paid !== existing.paid) { notify("Payments must be changed from the Payments page."); return; }
     const normalizedArticles = selectedArticles.map(({ id, name, photo, price }) => ({ id, name, photo, price }));
-    const nextBooking = { ...existing, id: existing?.id || `BK-2026-${1085 + bookings.length}`, customerId: customer.id, customer: customer.name, phone: customer.phone, phone2: customer.phone2 || "", articles: normalizedArticles, article: normalizedArticles.map((item) => item.id).join(", "), articleName: normalizedArticles.map((item) => item.name).join(", "), delivery, event: eventDate, returnDate, amount, paid, chest: form.get("chest") || "", back: form.get("back") || "", hip: form.get("hip") || "", status: existing?.status || "Confirmed", staff: existing?.staff || currentProfile.name, notes: form.get("notes") };
+    const existingBooking = existing ? { ...existing } : {};
+    delete existingBooking.event;
+    const nextBooking = {
+      ...existingBooking,
+      id: existing?.id || `BK-2026-${1085 + bookings.length}`,
+      bookingDate: existing ? existing.bookingDate : today,
+      createdBy: existing ? existing.createdBy || existing.staff || currentProfile.name : currentProfile.name,
+      createdById: existing ? existing.createdById : currentUserId,
+      customerId: customer.id,
+      customer: customer.name,
+      phone: customer.phone,
+      phone2: customer.phone2 || "",
+      articles: normalizedArticles,
+      article: normalizedArticles.map((item) => item.id).join(", "),
+      articleName: normalizedArticles.map((item) => item.name).join(", "),
+      delivery,
+      returnDate,
+      amount,
+      paid,
+      chest: form.get("chest") || "",
+      back: form.get("back") || "",
+      hip: form.get("hip") || "",
+      status: existing?.status || "Confirmed",
+      staff: existing?.staff || (existing ? existing.createdBy : currentProfile.name),
+      notes: form.get("notes"),
+    };
     if (existing) {
       const updatedBookings = bookings.map((item) => item.id === existing.id ? nextBooking : item);
       setBookings(updatedBookings);
@@ -773,7 +966,16 @@ export default function App() {
     }
     setBookings([nextBooking, ...bookings]);
     setArticles(articles.map((item) => selectedIds.includes(item.id) && item.status !== "Maintenance" ? { ...item, status: "Booked" } : item));
-    if (paid > 0) setPayments([{ id: `PAY-${2082 + payments.length}`, booking: nextBooking.id, customer: nextBooking.customer, date: today, amount: paid, method: form.get("method"), receivedBy: currentProfile.name }, ...payments]);
+    if (paid > 0) setPayments([{
+      id: `PAY-${2082 + payments.length}`,
+      booking: nextBooking.id,
+      customer: nextBooking.customer,
+      date: today,
+      amount: paid,
+      method: form.get("method"),
+      receivedBy: currentProfile.name,
+      receivedById: currentUserId,
+    }, ...payments]);
     setModal(null); notify(`Booking ${nextBooking.id} created successfully.`);
   };
   const handleBookingDelete = (booking) => {
@@ -824,7 +1026,16 @@ export default function App() {
     const amount = Number(form.get("amount"));
     if (!Number.isFinite(amount) || amount <= 0) { notify("Enter a payment amount greater than zero."); return; }
     if (amount > Math.max(booking.amount - booking.paid, 0)) { notify("Payment cannot exceed the booking's remaining balance."); return; }
-    setPayments([{ id: `PAY-${2082 + payments.length}`, booking: booking.id, customer: booking.customer, date: today, amount, method: form.get("method"), receivedBy: currentProfile.name }, ...payments]);
+    setPayments([{
+      id: `PAY-${2082 + payments.length}`,
+      booking: booking.id,
+      customer: booking.customer,
+      date: today,
+      amount,
+      method: form.get("method"),
+      receivedBy: currentProfile.name,
+      receivedById: currentUserId,
+    }, ...payments]);
     setBookings(bookings.map((item) => item.id === booking.id ? { ...item, paid: item.paid + amount } : item));
     setCustomers(customers.map((item) => item.id === booking.customerId || item.name === booking.customer
       ? { ...item, due: Math.max(Number(item.due || 0) - amount, 0) }
@@ -879,19 +1090,23 @@ export default function App() {
     }
     setModal({ type: "staff-create" });
   };
+  const dashboardBookings = role === "admin" ? bookings : bookings.filter((booking) => booking.createdById
+    ? booking.createdById === currentUserId
+    : (booking.createdBy || booking.staff) === currentProfile.name);
   const content = (() => {
     switch (activePage) {
       case "articles": return <ArticlesPage articles={articles} query={filteredQuery} onQueryChange={setQuery} onAdd={openArticleModal} onEdit={openEditArticle} />;
-      case "bookings": return <BookingsPage bookings={bookings} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} onPrintReceipt={(booking) => { setModal({ type: "booking-detail", booking }); window.setTimeout(() => window.print(), 100); }} />;
+      case "bookings": return <BookingsPage bookings={bookings} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} />;
       case "customers": return <CustomersPage customers={customers} query={filteredQuery} onQueryChange={setQuery} onAdd={openCustomerModal} />;
-      case "payments": return <PaymentsPage payments={payments} bookings={bookings} query={filteredQuery} onQueryChange={setQuery} onAdd={openPaymentModal} />;
+      case "payments": return <PaymentsPage payments={payments} bookings={bookings} query={filteredQuery} onQueryChange={setQuery} onAdd={openPaymentModal} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} salespeople={salespeople} adminProfile={profile} />;
       case "returns": return <ReturnsPage bookings={bookings} onReturn={handleReturn} />;
+      case "tomorrow": return <TomorrowDeliveriesPage bookings={bookings} articles={articles} dateRange={prepDateRange} onRangeChange={setPrepDateRange} onToggleReady={togglePrepReady} />;
       case "calendar": return <CalendarPage bookings={bookings} onNew={() => setModal({ type: "booking" })} />;
       case "reports": return <ReportsPage bookings={bookings} payments={payments} articles={articles} />;
       case "staff": return <StaffPage salespeople={salespeople} onAdd={openAddStaff} onEdit={(person) => setModal({ type: "staff-edit", person })} onToggle={handleStaffToggle} onDelete={handleStaffDelete} onChangeAdminPin={() => setModal({ type: "admin-pin" })} />;
       case "settings": return <SettingsPage language={language} onLanguageChange={setLanguage} business={businessSettings} onSaveBusiness={setBusinessSettings} notifications={notificationSettings} onNotificationsChange={setNotificationSettings} onChangeAdminPin={() => setModal({ type: "admin-pin" })} onManageStaff={() => nav("staff")} onNotify={notify} />;
       case "profile": return <ProfilePage profile={currentProfile} role={role} onEdit={() => setModal({ type: "profile-edit" })} />;
-      default: return <Dashboard articles={articles} bookings={bookings} role={role} profile={currentProfile} onNavigate={nav} />;
+      default: return <Dashboard articles={articles} bookings={dashboardBookings} role={role} profile={currentProfile} onNavigate={nav} />;
     }
   })();
 
@@ -912,7 +1127,7 @@ export default function App() {
             {configuredNotifications.payments && <div><span className="notification-dot notification-orange" /><p><b>Payment follow-up</b><small>PKR 2,500 due · Ayesha Khan</small></p></div>}
             {configuredNotifications.bookings && <div><span className="notification-dot" /><p><b>Booking pickup and return updates</b><small>Track each booking from reservation to return.</small></p></div>}
             {!configuredNotifications.bookings && !configuredNotifications.payments && !configuredNotifications.returns && <p>No notification types are enabled.</p>}
-            <button onClick={() => { setActivePage("returns"); setNotificationsOpen(false); }}>View all alerts <ChevronRight size={14} /></button></div>}</div>
+            <button onClick={() => { nav("returns"); setNotificationsOpen(false); }}>View all alerts <ChevronRight size={14} /></button></div>}</div>
         <span className="topbar-divider" /><ProfileMenu role={role} profile={currentProfile} onProfile={() => nav("profile")} onSignOut={signOut} /></div></header>
       <div className="page-content">{content}<footer className="app-footer"><span>© 2026 Dulhan Rani Boutique</span><span className={`sync-indicator sync-${syncStatus}`} role="status" title={syncError}><i />{syncStatus === "synced" ? "Cloud synced · local backup saved" : syncStatus === "syncing" ? "Syncing · local backup saved" : "Cloud unavailable · saved locally"}</span><span>Made for your boutique <span className="heart">♥</span></span></footer></div>
     </main>
@@ -953,10 +1168,17 @@ export default function App() {
     {modal?.type === "admin-pin" && <Modal title="Change administrator PIN" description="Confirm your current PIN before choosing a new one." onClose={() => setModal(null)}>
       <AdminPinForm onSave={handleAdminPinUpdate} onCancel={() => setModal(null)} />
     </Modal>}
-    {modal?.type === "booking-detail" && <Modal title="Booking details" description={`${modal.booking.id} · Created by ${modal.booking.staff}`} onClose={() => setModal(null)} className="receipt-modal">
+    {modal?.type === "booking-detail" && <Modal title="Booking details" description={`${modal.booking.id} · Created by ${modal.booking.createdBy || modal.booking.staff || "Unknown"}`} onClose={() => setModal(null)} className="receipt-modal">
       <div className="booking-detail"><header className="receipt-brand"><h1>{businessSettings.name || defaultBusinessSettings.name}</h1><p>{businessSettings.address}</p><p>{businessSettings.phone}{businessSettings.email ? ` · ${businessSettings.email}` : ""}</p><strong>Booking receipt · {modal.booking.id}</strong></header>
         <div className="detail-highlight"><span><CalendarDays size={18} /></span><div><strong>{modal.booking.customer}</strong><small>{modal.booking.phone}</small></div><Status>{modal.booking.status}</Status></div>
-        <div className="detail-lines"><div><span>Articles</span><strong>{bookingArticleTitles(modal.booking)}</strong><small>{bookingArticleLabels(modal.booking)}</small></div><div><span>Delivery date</span><strong>{readableDate(modal.booking.delivery)}</strong></div><div><span>Event date</span><strong>{readableDate(modal.booking.event)}</strong></div><div><span>Expected return</span><strong>{readableDate(modal.booking.returnDate)}</strong></div><div><span>Measurements</span><strong>{[modal.booking.chest && `Chest ${modal.booking.chest} in`, modal.booking.back && `Back ${modal.booking.back} in`, modal.booking.hip && `Hip ${modal.booking.hip} in`].filter(Boolean).join(" · ") || "Not provided"}</strong></div><div><span>Rental amount</span><strong>{currency(modal.booking.amount)}</strong></div><div><span>Paid to date</span><strong>{currency(modal.booking.paid)}</strong></div><div><span>Remaining balance</span><strong className={modal.booking.amount > modal.booking.paid ? "due-text" : "paid-text"}>{currency(Math.max(modal.booking.amount - modal.booking.paid, 0))}</strong></div></div>
+        <div className="detail-lines"><div><span>Booking date</span><strong>{readableDate(modal.booking.bookingDate)}</strong></div><div><span>Booked by</span><strong>{modal.booking.createdBy || modal.booking.staff || "Unknown"}</strong></div><div><span>Articles</span><strong>{bookingArticleTitles(modal.booking)}</strong><small>{bookingArticleLabels(modal.booking)}</small></div><div><span>Delivery date</span><strong>{readableDate(modal.booking.delivery)}</strong></div><div><span>Return date</span><strong>{readableDate(modal.booking.returnDate)}</strong></div><div><span>Measurements</span><strong>{[modal.booking.chest && `Chest ${modal.booking.chest} in`, modal.booking.back && `Back ${modal.booking.back} in`, modal.booking.hip && `Hip ${modal.booking.hip} in`].filter(Boolean).join(" · ") || "Not provided"}</strong></div><div><span>Rental amount</span><strong>{currency(modal.booking.amount)}</strong></div><div><span>Paid to date</span><strong>{currency(modal.booking.paid)}</strong></div><div><span>Remaining balance</span><strong className={modal.booking.amount > modal.booking.paid ? "due-text" : "paid-text"}>{currency(Math.max(modal.booking.amount - modal.booking.paid, 0))}</strong></div></div>
+        <section className="receipt-payment-history"><h3>Payment collection history</h3>
+          {payments.filter((payment) => payment.booking === modal.booking.id).length
+            ? <div className="table-scroll"><table><thead><tr><th>DATE</th><th>AMOUNT</th><th>METHOD</th><th>RECEIVED BY</th></tr></thead><tbody>
+              {payments.filter((payment) => payment.booking === modal.booking.id).map((payment) => <tr key={payment.id}><td>{readableDate(payment.date)}</td><td>{currency(payment.amount)}</td><td>{payment.method}</td><td>{payment.receivedBy || "Unknown"}</td></tr>)}
+            </tbody></table></div>
+            : <p>No payment has been recorded yet.</p>}
+        </section>
         {businessSettings.receiptFooter && <p className="receipt-footer">{businessSettings.receiptFooter}</p>}
         <Button variant="outline" icon={FileText} onClick={() => window.print()}>Print booking receipt</Button>{role === "admin" && <div className="booking-detail-admin-actions"><Button variant="outline" icon={Pencil} onClick={() => openEditBooking(modal.booking)}>Edit booking</Button><Button variant="outline" icon={Trash2} onClick={() => handleBookingDelete(modal.booking)}>Delete booking</Button></div>}</div></Modal>}
     {toast && <div className="toast" role="status" aria-live="polite"><span><Check size={18} /></span><strong>{toast}</strong><button onClick={() => { window.clearTimeout(toastTimer.current); setToast(""); }} aria-label="Dismiss"><X size={17} /></button></div>}
@@ -966,6 +1188,7 @@ export default function App() {
 function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit, onCancel, onAddArticle, addedArticleId, onAddedArticleHandled }) {
   const [selectedArticleIds, setSelectedArticleIds] = useState(booking ? bookingArticleIds(booking) : []);
   const selectedArticles = articles.filter((item) => selectedArticleIds.includes(item.id));
+  const [deliveryDate, setDeliveryDate] = useState(booking?.delivery || "");
   const [articleSearch, setArticleSearch] = useState("");
   const matchingArticles = articles.filter((item) => (item.status === "Available" || selectedArticleIds.includes(item.id))
     && (!articleSearch.trim() || `${item.id} ${item.name} ${item.category}`.toLowerCase().includes(articleSearch.trim().toLowerCase())));
@@ -1039,10 +1262,10 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
         <button className="button button-outline inline-save-customer" type="button" onClick={createCustomer}><Check size={13} />Save & select customer</button>
       </div>}
     </div>
+    <Field label="Booking date"><input type="date" value={booking?.bookingDate || today} readOnly /></Field>
     <div className="booking-measurements field-full"><strong>Customer measurements <span>(optional · inches)</span></strong><div><Field label="Chest"><input name="chest" type="number" min="0" step="0.1" defaultValue={booking?.chest || ""} placeholder="Chest size" /></Field><Field label="Back"><input name="back" type="number" min="0" step="0.1" defaultValue={booking?.back || ""} placeholder="Back size" /></Field><Field label="Hip"><input name="hip" type="number" min="0" step="0.1" defaultValue={booking?.hip || ""} placeholder="Hip size" /></Field></div></div>
-    <Field label="Delivery / pickup date *"><input type="date" name="delivery" min={booking ? undefined : today} defaultValue={booking?.delivery || ""} required /></Field>
-    <Field label="Event / wearing date *"><input type="date" name="event" min={booking ? undefined : today} defaultValue={booking?.event || ""} required /></Field>
-    <Field label="Expected return date *"><input type="date" name="returnDate" min={booking ? undefined : today} defaultValue={booking?.returnDate || ""} required /></Field>
+    <Field label="Delivery date *"><input type="date" name="delivery" min={booking ? undefined : today} value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} required /></Field>
+    <Field label="Expected return date *"><input type="date" name="returnDate" min={deliveryDate || (booking ? undefined : today)} defaultValue={booking?.returnDate || ""} required /></Field>
     <Field label="Agreed rental price (PKR) *"><input type="number" name="amount" min="1" placeholder="4500" value={amount} onChange={(event) => setAmount(event.target.value)} required />
       {selectedArticles.length > 0 && <small className="suggested-price">Suggested total for {selectedArticles.length} article{selectedArticles.length === 1 ? "" : "s"}: {currency(selectedArticles.reduce((sum, item) => sum + item.price, 0))}</small>}</Field>
     <Field label={booking ? "Advance received (PKR)" : "Advance payment (PKR)"}><input type="number" name="paid" min="0" value={paid} onChange={(event) => setPaid(event.target.value)} readOnly={Boolean(booking)} />{booking && <small className="suggested-price">Payments are managed from the Payments page.</small>}</Field>

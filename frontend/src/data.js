@@ -19,11 +19,11 @@ export const seedCustomers = [
 ];
 
 export const seedBookings = [
-  { id: "BK-2026-1084", customer: "Ayesha Khan", phone: "+92 300 1234567", article: "DRB-BRT-007", articleName: "Royal Maroon Bridal Lehnga", delivery: "2026-10-31", event: "2026-11-01", returnDate: "2026-11-03", amount: 4500, paid: 2000, status: "Out", staff: "Sana Malik" },
-  { id: "BK-2026-1083", customer: "Maham Ali", phone: "+92 321 7654321", article: "DRB-BRT-012", articleName: "Ivory Gold Walima Gown", delivery: "2026-11-01", event: "2026-11-02", returnDate: "2026-11-04", amount: 5200, paid: 5200, status: "Confirmed", staff: "Zoya Ahmed" },
-  { id: "BK-2026-1082", customer: "Sana Fatima", phone: "+92 333 9876543", article: "DRB-PRT-029", articleName: "Midnight Blue Pishwas", delivery: "2026-10-30", event: "2026-10-31", returnDate: "2026-11-01", amount: 3500, paid: 0, status: "Out", staff: "Sana Malik" },
-  { id: "BK-2026-1081", customer: "Hira Ahmed", phone: "+92 301 4567890", article: "DRB-PRT-023", articleName: "Emerald Embellished Maxi", delivery: "2026-10-28", event: "2026-10-29", returnDate: "2026-10-30", amount: 2800, paid: 2800, status: "Returned", staff: "Zoya Ahmed" },
-  { id: "BK-2026-1080", customer: "Ayesha Khan", phone: "+92 300 1234567", article: "DRB-BRT-031", articleName: "Crimson Velvet Bridal Set", delivery: "2026-11-05", event: "2026-11-06", returnDate: "2026-11-08", amount: 6000, paid: 3000, status: "Confirmed", staff: "Sana Malik" },
+  { id: "BK-2026-1084", customer: "Ayesha Khan", phone: "+92 300 1234567", article: "DRB-BRT-007", articleName: "Royal Maroon Bridal Lehnga", delivery: "2026-10-31", returnDate: "2026-11-03", amount: 4500, paid: 2000, status: "Out", staff: "Sana Malik" },
+  { id: "BK-2026-1083", customer: "Maham Ali", phone: "+92 321 7654321", article: "DRB-BRT-012", articleName: "Ivory Gold Walima Gown", delivery: "2026-11-01", returnDate: "2026-11-04", amount: 5200, paid: 5200, status: "Confirmed", staff: "Zoya Ahmed" },
+  { id: "BK-2026-1082", customer: "Sana Fatima", phone: "+92 333 9876543", article: "DRB-PRT-029", articleName: "Midnight Blue Pishwas", delivery: "2026-10-30", returnDate: "2026-11-01", amount: 3500, paid: 1500, status: "Out", staff: "Sana Malik" },
+  { id: "BK-2026-1081", customer: "Hira Ahmed", phone: "+92 301 4567890", article: "DRB-PRT-023", articleName: "Emerald Embellished Maxi", delivery: "2026-10-28", returnDate: "2026-10-30", amount: 2800, paid: 2800, status: "Returned", staff: "Zoya Ahmed" },
+  { id: "BK-2026-1080", customer: "Ayesha Khan", phone: "+92 300 1234567", article: "DRB-BRT-031", articleName: "Crimson Velvet Bridal Set", delivery: "2026-11-05", returnDate: "2026-11-08", amount: 6000, paid: 3000, status: "Confirmed", staff: "Sana Malik" },
 ];
 
 export const seedPayments = [
