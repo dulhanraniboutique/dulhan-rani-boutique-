@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  ArrowDownLeft, ArrowUpRight, Bell, CalendarDays, Check, ChevronDown, ChevronLeft,
+  ArrowDownLeft, Bell, CalendarDays, Check, ChevronDown, ChevronLeft,
   ChevronRight, CircleDollarSign, Clock3, Download, FileText, LayoutDashboard,
   LogOut, Menu, MoreHorizontal, Plus, Search, Settings, ShieldCheck, Shirt,
   SlidersHorizontal, Sparkles, Users, Wallet, X, UserRound, Truck, LockKeyhole,
@@ -10,19 +10,23 @@ import { seedArticles, seedBookings, seedCustomers, seedPayments } from "./data.
 import AccessScreen from "./AccessScreen.jsx";
 import PhotoUpload from "./PhotoUpload.jsx";
 import { Field } from "./shared.jsx";
-import { makePinRecord, verifyPin, validPin } from "./auth.js";
+import {
+  createStaff, deleteStaff, loadAuthProfiles, loadManagedProfiles, restoreSession, saveProfile,
+  setupAdmin, signIn, signOut as requestSignOut, updateAdminPin, validPin,
+} from "./auth.js";
 import { itemChanges, loadCollection, mergeChanges, persistCollectionChanges, refreshCollection } from "./dataSync.js";
 import { localizeNode, translateText } from "./i18n.js";
 
 const currency = (amount) => `PKR ${Number(amount || 0).toLocaleString("en-PK")}`;
 const defaultBusinessSettings = {
   name: "Dulhan Rani Boutique",
-  phone: "+92 300 0000000",
-  email: "hello@dulhanrani.pk",
-  address: "Zargran, Sheikhupura, Pakistan",
+  phone: "",
+  email: "",
+  address: "",
   receiptFooter: "Thank you for choosing Dulhan Rani Boutique.",
 };
 const defaultNotificationSettings = { bookings: true, payments: true, returns: true };
+const emptyProfile = { name: "", email: "", phone: "" };
 const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const bookingArticleIds = (booking) => booking.articles?.map((article) => typeof article === "string" ? article : article.id) || (booking.article ? [booking.article] : []);
 const bookingArticleNames = (booking) => booking.articles?.map((article) => typeof article === "string" ? article : article.name).filter(Boolean) || (booking.articleName ? [booking.articleName] : []);
@@ -48,11 +52,20 @@ const dateAfter = (date, days) => {
   result.setUTCDate(result.getUTCDate() + days);
   return result.toISOString().slice(0, 10);
 };
+const randomRecordSuffix = () => crypto.randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase();
+const createRecordId = (prefix) => `${prefix}-${randomRecordSuffix()}`;
 const stored = (key, fallback) => {
   const value = localStorage.getItem(`drb-${key}`);
   return value ? JSON.parse(value) : fallback;
 };
 const save = (key, value) => localStorage.setItem(`drb-${key}`, JSON.stringify(value));
+const workspaceDataVersion = "2";
+if (typeof window !== "undefined" && localStorage.getItem("drb-data-version") !== workspaceDataVersion) {
+  Object.keys(localStorage)
+    .filter((key) => key.startsWith("drb-"))
+    .forEach((key) => localStorage.removeItem(key));
+  localStorage.setItem("drb-data-version", workspaceDataVersion);
+}
 const readableDate = (value) => value
   ? new Date(`${value}T00:00:00`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
   : "—";
@@ -77,21 +90,13 @@ const navGroups = [
   ] },
 ];
 
-function useLocalData(key, fallback) {
-  const [value, setValue] = useState(() => stored(key, fallback));
-  const update = (next) => {
-    setValue(next);
-    save(key, next);
-  };
-  return [value, update];
-}
-
-function useSyncedData(collection, fallback) {
+function useSyncedData(collection, fallback, enabled) {
   const [value, setValue] = useState(() => stored(collection, fallback));
   const valueRef = useRef(value);
   const revisionRef = useRef(0);
 
   useEffect(() => {
+    if (!enabled) return undefined;
     let active = true;
     const baselineRevision = revisionRef.current;
 
@@ -140,7 +145,7 @@ function useSyncedData(collection, fallback) {
       window.removeEventListener("focus", refresh);
       window.clearInterval(interval);
     };
-  }, [collection]);
+  }, [collection, enabled]);
 
   const update = (next) => {
     const previous = valueRef.current;
@@ -149,7 +154,7 @@ function useSyncedData(collection, fallback) {
     revisionRef.current += 1;
     setValue(resolved);
     save(collection, resolved);
-    persistCollectionChanges(collection, previous, resolved).catch(() => {});
+    if (enabled) persistCollectionChanges(collection, previous, resolved).catch(() => {});
   };
 
   return [value, update];
@@ -188,11 +193,24 @@ function Modal({ title, description, onClose, children, wide = false, className 
   </div>;
 }
 
-function Dashboard({ articles, bookings, role, profile, onNavigate }) {
+function Dashboard({ articles, bookings, payments, role, profile, onNavigate }) {
   const due = bookings
     .filter((booking) => !["Returned", "Cancelled"].includes(booking.status))
     .reduce((sum, booking) => sum + Math.max(booking.amount - booking.paid, 0), 0);
   const recent = [...bookings].slice(0, 4);
+  const schedule = bookings.flatMap((booking) => [
+    ...(booking.delivery === today ? [{ booking, label: "Delivery", tone: "blue" }] : []),
+    ...(booking.returnDate === today ? [{ booking, label: "Expected return", tone: "orange" }] : []),
+  ]);
+  const currentYear = new Date().getFullYear();
+  const monthlyRevenue = Array.from({ length: 12 }, (_, month) => payments
+    .filter((payment) => {
+      const date = new Date(`${payment.date}T00:00:00`);
+      return date.getFullYear() === currentYear && date.getMonth() === month;
+    })
+    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0));
+  const highestRevenue = Math.max(...monthlyRevenue);
+  const maintenanceCount = articles.filter((item) => item.status === "Maintenance").length;
   return <>
     <PageHeader eyebrow={`${role === "admin" ? "ADMINISTRATOR" : "SALESPERSON"} OVERVIEW`} title={`Good morning, ${profile.name.split(" ")[0]} ✨`}
       description="Here’s what’s happening at your boutique today." action actionLabel="Create booking" actionIcon={Plus} onAction={() => onNavigate("new-booking")} />
@@ -203,29 +221,26 @@ function Dashboard({ articles, bookings, role, profile, onNavigate }) {
       <span className="strip-decoration">✦</span>
     </div>
     <div className="stats-grid">
-      <StatCard label="Total articles" value={articles.length} note="Across all categories" icon={Shirt} tone="plum" trend="+2 this month" />
-      <StatCard label="Active bookings" value={bookings.filter((booking) => booking.status !== "Returned").length} note="Currently in your diary" icon={CalendarDays} tone="blue" trend="3 upcoming" />
-      <StatCard label="Today's deliveries" value={bookings.filter((booking) => booking.delivery === today && booking.status === "Confirmed").length} note="Make sure each is ready" icon={Truck} tone="orange" trend="View checklist" onTrendClick={() => onNavigate("today-deliveries")} />
-      <StatCard label="Outstanding balance" value={currency(due)} note="Across active bookings" icon={CircleDollarSign} tone="green" trend="View payments" />
+      <StatCard label="Total articles" value={articles.length} note="Across all categories" icon={Shirt} tone="plum" />
+      <StatCard label="Active bookings" value={bookings.filter((booking) => !["Returned", "Cancelled"].includes(booking.status)).length} note="Currently in your diary" icon={CalendarDays} tone="blue" />
+      <StatCard label="Today's deliveries" value={bookings.filter((booking) => booking.delivery === today && booking.status === "Confirmed").length} note="Scheduled for today" icon={Truck} tone="orange" trend="View checklist" onTrendClick={() => onNavigate("today-deliveries")} />
+      <StatCard label="Outstanding balance" value={currency(due)} note="Across active bookings" icon={CircleDollarSign} tone="green" />
     </div>
     <div className="dashboard-grid">
       <section className="panel revenue-panel">
-        <div className="panel-heading"><div><h2>Revenue overview</h2><p>Rental income collected this year</p></div>
-          <select aria-label="Revenue period" defaultValue="This year"><option>This year</option><option>This month</option><option>This week</option></select></div>
-        <div className="revenue-total"><strong>PKR 284,500</strong><span className="trend-positive"><ArrowUpRight size={15} /> 12.8%</span><small>vs. last year</small></div>
+        <div className="panel-heading"><div><h2>Revenue overview</h2><p>Rental income collected this year</p></div></div>
+        <div className="revenue-total"><strong>{currency(monthlyRevenue.reduce((sum, amount) => sum + amount, 0))}</strong><small>{currentYear}</small></div>
         <div className="chart" aria-label="Monthly revenue chart">
-          {[42, 56, 48, 69, 61, 77, 55, 87, 67, 94, 74, 100].map((height, index) =>
-            <div className="chart-column" key={index}><div className={`chart-bar ${index === 9 ? "chart-bar-active" : ""}`} style={{ height: `${height}%` }} /><span>{["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][index]}</span></div>)}
+          {monthlyRevenue.map((amount, index) =>
+            <div className="chart-column" key={index}><div className={`chart-bar ${index === new Date().getMonth() ? "chart-bar-active" : ""}`} style={{ height: `${highestRevenue ? Math.max((amount / highestRevenue) * 100, 4) : 4}%` }} /><span>{new Date(currentYear, index, 1).toLocaleDateString("en", { month: "short" })}</span></div>)}
         </div>
       </section>
       <section className="panel today-panel">
         <div className="panel-heading"><div><h2>Today’s schedule</h2><p>{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</p></div>
           <button className="text-button" onClick={() => onNavigate("bookings")}>See all <ChevronRight size={15} /></button></div>
-        <div className="timeline">
-          <TimelineItem time="10:30 AM" title="Bridal fitting" detail="Ayesha Khan · DRB-BRT-007" tone="plum" />
-          <TimelineItem time="12:00 PM" title="Dress delivery" detail="Maham Ali · Ivory Gold Gown" tone="blue" />
-          <TimelineItem time="03:30 PM" title="Expected return" detail="Sana Fatima · Midnight Blue" tone="orange" />
-        </div>
+        {schedule.length
+          ? <div className="timeline">{schedule.map(({ booking, label, tone }) => <TimelineItem key={`${booking.id}-${label}`} time={label} title={booking.customer} detail={bookingArticleTitles(booking) || booking.id} tone={tone} />)}</div>
+          : <EmptyState title="Nothing scheduled today" detail="Today's deliveries and returns will appear here when you add bookings." />}
       </section>
     </div>
     <div className="dashboard-grid lower-grid">
@@ -233,7 +248,9 @@ function Dashboard({ articles, bookings, role, profile, onNavigate }) {
         <div className="panel-heading"><div><h2>Recent bookings</h2><p>Your latest rental activity</p></div>
           <button className="text-button" onClick={() => onNavigate("bookings")}>View bookings <ChevronRight size={15} /></button></div>
         <div className="table-scroll"><table><thead><tr><th>BOOKING</th><th>CUSTOMER</th><th>ARTICLE</th><th>BOOKING DATE</th><th>DELIVERY DATE</th><th>RETURN DATE</th><th>STATUS</th></tr></thead>
-          <tbody>{recent.map((booking) => <tr key={booking.id}><td className="strong-cell">{booking.id}</td><td>{booking.customer}</td><td>{bookingArticleLabels(booking)}</td><td>{readableDate(booking.bookingDate)}</td><td>{readableDate(booking.delivery)}</td><td>{readableDate(booking.returnDate)}</td><td><Status>{booking.status}</Status></td></tr>)}</tbody></table></div>
+          <tbody>{recent.map((booking) => <tr key={booking.id}><td className="strong-cell">{booking.id}</td><td>{booking.customer}</td><td>{bookingArticleLabels(booking)}</td><td>{readableDate(booking.bookingDate)}</td><td>{readableDate(booking.delivery)}</td><td>{readableDate(booking.returnDate)}</td><td><Status>{booking.status}</Status></td></tr>)}</tbody></table>
+          {!recent.length && <EmptyState title="No bookings yet" detail="Your recent bookings will appear here." />}
+        </div>
       </section>
       <section className="panel stock-panel">
         <div className="panel-heading"><div><h2>Article availability</h2><p>Inventory at a glance</p></div><button className="text-button" onClick={() => onNavigate("articles")}>Manage <ChevronRight size={15} /></button></div>
@@ -242,7 +259,7 @@ function Dashboard({ articles, bookings, role, profile, onNavigate }) {
           <Availability label="Currently rented" count={bookings.filter((item) => item.status === "Out").length} total={articles.length} tone="plum" />
           <Availability label="In maintenance" count={articles.filter((item) => item.status === "Maintenance").length} total={articles.length} tone="orange" />
         </div>
-        <div className="stock-note"><AlertTriangle size={15} /><span>1 article needs attention before its next booking.</span></div>
+        <div className="stock-note"><AlertTriangle size={15} /><span>{maintenanceCount ? `${maintenanceCount} article${maintenanceCount === 1 ? "" : "s"} need attention before the next booking.` : "No articles currently need attention."}</span></div>
       </section>
     </div>
   </>;
@@ -519,14 +536,44 @@ function CalendarPage({ bookings, onNew }) {
 }
 
 function ReportsPage({ bookings, payments, articles }) {
+  const revenue = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const averageRental = bookings.length
+    ? bookings.reduce((sum, booking) => sum + Number(booking.amount || 0), 0) / bookings.length
+    : 0;
+  const categoryCounts = new Map();
+  const articleCategories = new Map(articles.map((article) => [article.id, article.category || "Other"]));
+  bookings.forEach((booking) => bookingArticleIds(booking).forEach((id) => {
+    const category = articleCategories.get(id);
+    if (category) categoryCounts.set(category, (categoryCounts.get(category) || 0) + 1);
+  }));
+  const categories = [...categoryCounts].sort((left, right) => right[1] - left[1]);
+  const topCategory = categories[0];
+  const monthBuckets = Array.from({ length: 6 }, (_, index) => {
+    const date = new Date();
+    date.setDate(1);
+    date.setMonth(date.getMonth() - (5 - index));
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    return {
+      key,
+      label: date.toLocaleDateString("en", { month: "short" }),
+      count: bookings.filter((booking) => String(booking.bookingDate || "").startsWith(key)).length,
+    };
+  });
+  const highestMonthCount = Math.max(...monthBuckets.map(({ count }) => count));
   return <>
     <PageHeader eyebrow="BUSINESS INSIGHTS" title="Reports" description="Understand your rental performance and make informed decisions." action actionLabel="Download report" actionIcon={Download} onAction={() => window.print()} />
     <div className="report-period"><span>Showing performance for</span><select defaultValue="This month"><option>This month</option><option>This week</option><option>This year</option><option>Custom range</option></select><button className="button button-outline" onClick={() => window.print()}><Download size={15} /> Export PDF</button></div>
-    <div className="stats-grid report-stats"><StatCard label="Rental revenue" value={currency(payments.reduce((sum, p) => sum + p.amount, 0) + 18400)} note="Collected payments" icon={Wallet} tone="green" trend="+12.8%" /><StatCard label="Bookings created" value={bookings.length + 32} note="Compared to last month" icon={CalendarDays} tone="plum" trend="+8 bookings" /><StatCard label="Average rental" value={currency(3850)} note="Per confirmed booking" icon={CircleDollarSign} tone="blue" trend="Steady" /><StatCard label="Top category" value="Bridal wear" note={`${articles.filter((a) => a.category === "Bridal Wear").length + 18} rentals this month`} icon={Shirt} tone="orange" trend="Most popular" /></div>
+    <div className="stats-grid report-stats"><StatCard label="Rental revenue" value={currency(revenue)} note="Collected payments" icon={Wallet} tone="green" /><StatCard label="Bookings created" value={bookings.length} note="All recorded bookings" icon={CalendarDays} tone="plum" /><StatCard label="Average rental" value={currency(averageRental)} note="Per recorded booking" icon={CircleDollarSign} tone="blue" /><StatCard label="Top category" value={topCategory?.[0] || "—"} note={topCategory ? `${topCategory[1]} recorded rentals` : "No category data yet"} icon={Shirt} tone="orange" /></div>
     <div className="dashboard-grid"><section className="panel report-panel"><div className="panel-heading"><div><h2>Bookings by month</h2><p>Confirmed rentals over the past 6 months</p></div></div>
-      <div className="report-chart">{[48, 62, 54, 80, 68, 96].map((height, i) => <div className="report-bar-column" key={i}><strong>{[18,24,21,32,28,39][i]}</strong><div className="report-bar" style={{ height: `${height}%` }} /><span>{["May","Jun","Jul","Aug","Sep","Oct"][i]}</span></div>)}</div></section>
+      <div className="report-chart">{monthBuckets.map(({ key, label, count }) => <div className="report-bar-column" key={key}><strong>{count}</strong><div className="report-bar" style={{ height: `${highestMonthCount ? Math.max((count / highestMonthCount) * 100, 4) : 4}%` }} /><span>{label}</span></div>)}</div></section>
       <section className="panel"><div className="panel-heading"><div><h2>Popular categories</h2><p>Share of all rentals</p></div></div><div className="category-report">
-        {[["Bridal wear", 58, "plum"], ["Party wear", 28, "orange"], ["Formal wear", 14, "blue"]].map(([label, percent, color]) => <div className="category-row" key={label}><div><span>{label}</span><strong>{percent}%</strong></div><div className="progress-track"><span className={`progress-${color}`} style={{ width: `${percent}%` }} /></div></div>)}
+        {categories.length
+          ? categories.map(([label, count], index) => {
+            const percent = Math.round((count / categories.reduce((sum, [, total]) => sum + total, 0)) * 100);
+            const color = ["plum", "orange", "blue"][index % 3];
+            return <div className="category-row" key={label}><div><span>{label}</span><strong>{percent}%</strong></div><div className="progress-track"><span className={`progress-${color}`} style={{ width: `${percent}%` }} /></div></div>;
+          })
+          : <EmptyState title="No category data yet" detail="Categories from your bookings will appear here." />}
       </div></section></div>
     <div className="report-shortcuts"><ReportShortcut icon={FileText} title="Booking report" detail="All rentals by date and status" /><ReportShortcut icon={Wallet} title="Pending payments" detail="Balances that need follow-up" /><ReportShortcut icon={RotateCcw} title="Return history" detail="Returned and overdue articles" /><ReportShortcut icon={Users} title="Staff performance" detail="Bookings by team member" /></div>
   </>;
@@ -542,7 +589,7 @@ function StaffPage({ salespeople, onAdd, onEdit, onToggle, onDelete, onChangeAdm
     <PageHeader eyebrow="TEAM ACCESS" title="Staff & roles" description="Create up to six salesperson profiles and assign each person their own PIN." action actionLabel="Add salesperson" onAction={onAdd} />
     <div className="role-banner"><ShieldCheck size={21} /><div><strong>Administrator PIN protection</strong><span>Only an administrator can create or manage salesperson profiles.</span></div><button className="button button-outline" onClick={onChangeAdminPin}>Change admin PIN</button></div>
     <div className="staff-capacity"><div><Users size={18} /><strong>{activeCount} of 6</strong><span>active salesperson profiles</span></div><div className="staff-slots">{Array.from({ length: 6 }, (_, index) => <span className={index < activeCount ? "staff-slot-filled" : ""} key={index} />)}</div></div>
-    <section className="panel table-panel"><div className="panel-heading table-title"><div><h2>Salesperson profiles</h2><p>PINs are hashed and saved in this browser demo.</p></div></div>
+    <section className="panel table-panel"><div className="panel-heading table-title"><div><h2>Salesperson profiles</h2><p>PIN verification and profile access are managed by the backend.</p></div></div>
       {salespeople.length ? <div className="table-scroll"><table><thead><tr><th>TEAM MEMBER</th><th>PHONE</th><th>ROLE</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>{salespeople.map((person, index) => <tr key={person.id}>
         <td><div className="customer-cell"><span className={`avatar avatar-${index % 4}`}>{person.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span><div><strong>{person.name}</strong><small>{person.email || "Salesperson account"}</small></div></div></td>
         <td>{person.phone || "—"}</td><td><span className="role-pill role-sales"><UserRound size={13} />Salesperson</span></td><td><Status>{person.active === false ? "Inactive" : "Active"}</Status></td>
@@ -572,8 +619,8 @@ function StaffForm({ person, onSave, onCancel, onDelete }) {
     setSaving(true);
     try {
       await onSave({ id: person?.id, name: name.trim(), phone: phone.trim(), email: email.trim(), pin: pin || null });
-    } catch {
-      setError("Could not save this profile. Please try again.");
+    } catch (saveError) {
+      setError(saveError.message || "Could not save this profile. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -642,7 +689,7 @@ function SettingsPage({ language, onLanguageChange, business, onSaveBusiness, no
         {activeSection === "business" && <><div className="panel-heading"><div><h2>Business profile</h2><p>Configure your boutique and workspace language.</p></div></div>
           <div className="settings-language"><Field label="Language"><select value={language} onChange={(event) => onLanguageChange(event.target.value)}><option value="en">English</option><option value="ur">Urdu</option></select></Field><p>English is the default language. Choose Urdu to switch the interface.</p></div>
           <div className="settings-fields"><Field label="Boutique name"><input value={draft.name} onChange={updateDraft("name")} required /></Field><Field label="Contact phone"><input value={draft.phone} onChange={updateDraft("phone")} /></Field><Field label="Email address"><input type="email" value={draft.email} onChange={updateDraft("email")} /></Field><Field label="Boutique address" className="field-full"><textarea rows="3" value={draft.address} onChange={updateDraft("address")} /></Field></div>
-          <div className="settings-save"><span>{saved ? "Changes saved in this browser." : "Changes are stored in this browser."}</span><Button onClick={saveDraft} icon={Check}>Save changes</Button></div></>}
+          <div className="settings-save"><span>{saved ? "Saved locally. Cloud sync status appears in the footer." : "Changes sync with the cloud."}</span><Button onClick={saveDraft} icon={Check}>Save changes</Button></div></>}
         {activeSection === "security" && <><div className="panel-heading"><div><h2>Security & access</h2><p>Manage sign-in protection for your boutique workspace.</p></div></div>
           <div className="settings-security-card"><span className="role-option-icon admin-icon"><LockKeyhole size={18} /></span><div><strong>Administrator PIN</strong><p>Your administrator profile is protected with a PIN. Salespeople use their individual PINs.</p></div><Status>Protected</Status></div>
           <div className="settings-security-actions"><Button variant="outline" icon={ShieldCheck} onClick={onChangeAdminPin}>Change administrator PIN</Button><Button variant="outline" icon={Users} onClick={onManageStaff}>Manage salesperson access</Button></div></>}
@@ -650,7 +697,7 @@ function SettingsPage({ language, onLanguageChange, business, onSaveBusiness, no
           <div className="settings-toggle-list">{[["bookings","Booking updates","New and updated booking alerts"],["payments","Payment reminders","Outstanding balance and payment alerts"],["returns","Return reminders","Upcoming and overdue return alerts"]].map(([key,title,description]) => <label className="settings-toggle" key={key}><span><strong>{title}</strong><small>{description}</small></span><input type="checkbox" checked={notifications[key]} onChange={(event) => onNotificationsChange({ ...notifications, [key]: event.target.checked })} /></label>)}</div></>}
         {activeSection === "receipt" && <><div className="panel-heading"><div><h2>Receipt details</h2><p>These business details appear on printed booking receipts.</p></div></div>
           <div className="settings-fields"><Field label="Receipt business name"><input value={draft.name} onChange={updateDraft("name")} required /></Field><Field label="Contact phone"><input value={draft.phone} onChange={updateDraft("phone")} /></Field><Field label="Business address" className="field-full"><textarea rows="2" value={draft.address} onChange={updateDraft("address")} /></Field><Field label="Receipt footer message" className="field-full"><textarea rows="2" value={draft.receiptFooter} onChange={updateDraft("receiptFooter")} /></Field></div>
-          <div className="settings-save"><span>{saved ? "Receipt details saved." : "Receipt details are stored in this browser."}</span><Button onClick={saveDraft} icon={Check}>Save receipt details</Button></div></>}
+          <div className="settings-save"><span>{saved ? "Saved locally. Cloud sync status appears in the footer." : "Receipt details sync with the cloud."}</span><Button onClick={saveDraft} icon={Check}>Save receipt details</Button></div></>}
       </section></div>
   </>;
 }
@@ -660,8 +707,8 @@ function ProfilePage({ profile, role, onEdit }) {
   return <>
     <PageHeader eyebrow="YOUR ACCOUNT" title="My profile" description="Review and update your account information." />
     <section className="profile-hero panel"><div className="profile-avatar">{initials}</div><div className="profile-person"><h2>{profile.name}</h2><span>{profile.email}</span><span className={`role-pill role-${role === "admin" ? "admin" : "sales"}`}>{role === "admin" ? <ShieldCheck size={13} /> : <UserRound size={13} />}{role === "admin" ? "Administrator" : "Salesperson"}</span></div><button className="button button-outline" onClick={onEdit}><Pencil size={15} />Edit profile</button></section>
-    <div className="profile-grid"><section className="panel profile-section"><div className="panel-heading"><div><h2>Account details</h2><p>Your personal and contact information</p></div><button className="text-button" onClick={onEdit}><Pencil size={13} /> Edit</button></div><div className="profile-detail"><span>Full name</span><strong>{profile.name}</strong></div><div className="profile-detail"><span>Email address</span><strong>{profile.email}</strong></div><div className="profile-detail"><span>Phone number</span><strong>{profile.phone}</strong></div><div className="profile-detail"><span>Role</span><strong>{role === "admin" ? "Administrator" : "Salesperson"}</strong></div><div className="profile-detail"><span>Member since</span><strong>October 2024</strong></div></section>
-      <section className="panel profile-section"><div className="panel-heading"><div><h2>Profile security</h2><p>Each team member signs in with an individual PIN.</p></div></div><div className="security-profile-info"><span className="role-option-icon admin-icon"><LockKeyhole size={18} /></span><div><strong>PIN-protected profile</strong><small>{role === "admin" ? "You can update the administrator PIN under Staff & roles." : "Ask your administrator to reset your salesperson PIN."}</small></div></div><p className="demo-notice">PINs are browser-demo access controls. Add a backend before using this for real security.</p></section></div>
+    <div className="profile-grid"><section className="panel profile-section"><div className="panel-heading"><div><h2>Account details</h2><p>Your personal and contact information</p></div><button className="text-button" onClick={onEdit}><Pencil size={13} /> Edit</button></div><div className="profile-detail"><span>Full name</span><strong>{profile.name}</strong></div><div className="profile-detail"><span>Email address</span><strong>{profile.email || "—"}</strong></div><div className="profile-detail"><span>Phone number</span><strong>{profile.phone || "—"}</strong></div><div className="profile-detail"><span>Role</span><strong>{role === "admin" ? "Administrator" : "Salesperson"}</strong></div><div className="profile-detail"><span>Member since</span><strong>{profile.createdAt ? readableDate(String(profile.createdAt).slice(0, 10)) : "—"}</strong></div></section>
+      <section className="panel profile-section"><div className="panel-heading"><div><h2>Profile security</h2><p>Each team member signs in with an individual PIN.</p></div></div><div className="security-profile-info"><span className="role-option-icon admin-icon"><LockKeyhole size={18} /></span><div><strong>PIN-protected profile</strong><small>{role === "admin" ? "You can update the administrator PIN under Staff & roles." : "Ask your administrator to reset your salesperson PIN."}</small></div></div><p className="demo-notice">PIN verification and access sessions are handled by the backend.</p></section></div>
   </>;
 }
 
@@ -670,15 +717,24 @@ function ProfileEditForm({ profile, onSave, onCancel }) {
   const [email, setEmail] = useState(profile.email);
   const [phone, setPhone] = useState(profile.phone);
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault();
     const updated = { name: name.trim(), email: email.trim(), phone: phone.trim() };
     if (!updated.name || !updated.email || !updated.phone) {
       setError("Please complete all profile fields.");
       return;
     }
-    onSave(updated);
+    setSaving(true);
+    setError("");
+    try {
+      await onSave(updated);
+    } catch (saveError) {
+      setError(saveError.message || "Could not save your profile. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return <form className="form-grid" onSubmit={submit}>
@@ -686,7 +742,7 @@ function ProfileEditForm({ profile, onSave, onCancel }) {
     <Field label="Email address *" className="field-full"><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></Field>
     <Field label="Phone number *" className="field-full"><input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} required /></Field>
     {error && <p className="form-error field-full" role="alert">{error}</p>}
-    <div className="modal-actions"><Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={Check}>Save profile</Button></div>
+    <div className="modal-actions"><Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={Check} disabled={saving}>{saving ? "Saving…" : "Save profile"}</Button></div>
   </form>;
 }
 
@@ -704,6 +760,29 @@ function EmptyState({ title, detail }) {
 export default function App() {
   const [syncStatus, setSyncStatus] = useState("syncing");
   const [syncError, setSyncError] = useState("");
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [adminConfigured, setAdminConfigured] = useState(false);
+  const [profile, setProfile] = useState(emptyProfile);
+  const [salespeople, setSalespeople] = useState([]);
+  const [articles, setArticles] = useSyncedData("articles", seedArticles, Boolean(session));
+  const [customers, setCustomers] = useSyncedData("customers", seedCustomers, Boolean(session));
+  const [bookings, setBookings] = useSyncedData("bookings", seedBookings, Boolean(session));
+  const [payments, setPayments] = useSyncedData("payments", seedPayments, Boolean(session));
+  const [workspaceSettings, setWorkspaceSettings] = useSyncedData("settings", [], Boolean(session));
+  const businessSettings = workspaceSettings.find((item) => item.id === "business")?.value || defaultBusinessSettings;
+  const notificationSettings = workspaceSettings.find((item) => item.id === "notifications")?.value || defaultNotificationSettings;
+  const language = workspaceSettings.find((item) => item.id === "language")?.value || "en";
+  const updateSetting = (id, value) => setWorkspaceSettings((current) => {
+    const item = current.find((entry) => entry.id === id);
+    return item
+      ? current.map((entry) => entry.id === id ? { ...entry, value } : entry)
+      : [...current, { id, value }];
+  });
+  const setBusinessSettings = (value) => updateSetting("business", value);
+  const setNotificationSettings = (value) => updateSetting("notifications", value);
+  const setLanguage = (value) => updateSetting("language", value);
   useEffect(() => {
     const handleSyncStatus = (event) => {
       setSyncStatus(event.detail.status);
@@ -712,28 +791,51 @@ export default function App() {
     window.addEventListener("drb-sync-status", handleSyncStatus);
     return () => window.removeEventListener("drb-sync-status", handleSyncStatus);
   }, []);
-  const [articles, setArticles] = useSyncedData("articles", seedArticles);
-  const [customers, setCustomers] = useSyncedData("customers", seedCustomers);
-  const [bookings, setBookings] = useSyncedData("bookings", seedBookings);
-  const [payments, setPayments] = useSyncedData("payments", seedPayments);
-  const [businessSettings, setBusinessSettings] = useLocalData("business-settings", defaultBusinessSettings);
-  const [notificationSettings, setNotificationSettings] = useLocalData("notification-settings", defaultNotificationSettings);
-  const [profile, setProfile] = useLocalData("profile", {
-    name: "Sana Malik",
-    email: "sana@dulhanrani.pk",
-    phone: "+92 300 0000000",
-  });
-  const [adminPin, setAdminPin] = useLocalData("admin-pin", null);
-  const [salespeople, setSalespeople] = useLocalData("salespeople", []);
+  useEffect(() => {
+    let active = true;
+    const initializeAuth = async () => {
+      try {
+        const profiles = await loadAuthProfiles();
+        const restoredSession = await restoreSession().catch((error) => {
+          if (error.status === 401) return null;
+          throw error;
+        });
+        if (!active) return;
+        setAdminConfigured(profiles.adminConfigured);
+        setProfile(restoredSession?.role === "admin" ? restoredSession : profiles.admin || emptyProfile);
+        const availableSalespeople = profiles.salespeople || [];
+        setSalespeople(restoredSession?.role === "sales"
+          ? availableSalespeople.map((person) => person.id === restoredSession.id ? restoredSession : person)
+          : availableSalespeople);
+        setSession(restoredSession);
+        setAuthError("");
+        if (restoredSession?.role === "admin") {
+          try {
+            const managedProfiles = await loadManagedProfiles();
+            if (active) {
+              setProfile(managedProfiles.admin);
+              setSalespeople(managedProfiles.salespeople);
+            }
+          } catch (error) {
+            if (active) setAuthError(error.message);
+          }
+        }
+      } catch (error) {
+        if (active) setAuthError(error.message);
+      } finally {
+        if (active) setAuthReady(true);
+      }
+    };
+    initializeAuth();
+    return () => { active = false; };
+  }, []);
   const [activePage, setActivePage] = useState("dashboard");
   const [prepDateRange, setPrepDateRange] = useState(() => ({ from: today, to: dateAfter(today, 1) }));
-  const [session, setSession] = useState(null);
   const [bootStage, setBootStage] = useState("splash");
   const [query, setQuery] = useState("");
   const [modal, setModal] = useState(null);
   const [quickCreatedArticleId, setQuickCreatedArticleId] = useState("");
   const [toast, setToast] = useState("");
-  const [language, setLanguage] = useLocalData("language", "en");
   const toastTimer = useRef(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -790,6 +892,12 @@ export default function App() {
             : item.label,
       })),
     }));
+  const returnAlerts = bookings.filter((booking) => booking.status === "Out" && booking.returnDate <= today);
+  const paymentAlerts = bookings.filter((booking) => !["Returned", "Cancelled"].includes(booking.status) && booking.amount > booking.paid);
+  const bookingAlerts = bookings.filter((booking) => booking.delivery === today && booking.status === "Confirmed");
+  const hasNotifications = (configuredNotifications.returns && returnAlerts.length)
+    || (configuredNotifications.payments && paymentAlerts.length)
+    || (configuredNotifications.bookings && bookingAlerts.length);
   const nav = (page) => {
     if (page === "new-booking") setModal({ type: "booking" });
     else {
@@ -813,17 +921,28 @@ export default function App() {
       return { ...booking, prepReadyArticleIds: [...readyIds] };
     }));
   };
-  const handleAdminSetup = async ({ name, pin }) => {
-    const pinRecord = await makePinRecord(pin);
-    setProfile({ ...profile, name });
-    setAdminPin(pinRecord);
-    setSession({ role: "admin" });
+  const handleAdminSetup = async ({ name, pin, setupToken }) => {
+    const newSession = await setupAdmin({ name, pin, setupToken });
+    setAdminConfigured(true);
+    setProfile(newSession);
+    setSession(newSession);
+    setAuthError("");
     setActivePage("dashboard");
   };
   const handleSignIn = async (selected, pin) => {
-    if (!await verifyPin(pin, selected.pinRecord)) return false;
-    if (selected.role === "admin") setSession({ role: "admin" });
-    else setSession({ role: "sales", id: selected.id });
+    const newSession = await signIn(selected.role === "admin" ? "admin" : selected.id, pin);
+    if (newSession.role === "admin") {
+      setProfile(newSession);
+      setSession(newSession);
+      try {
+        const managedProfiles = await loadManagedProfiles();
+        setSalespeople(managedProfiles.salespeople);
+      } catch (error) {
+        notify(error.message || "Could not load salesperson profiles.");
+      }
+    } else setSalespeople((current) => current.map((person) => person.id === newSession.id ? newSession : person));
+    setSession(newSession);
+    setAuthError("");
     setActivePage("dashboard");
     setQuery("");
     return true;
@@ -833,10 +952,16 @@ export default function App() {
     setActivePage("dashboard");
     setQuery("");
     setModal(null);
+    requestSignOut().catch((error) => {
+      console.error("Could not revoke the signed-out session:", error);
+      notify("Signed out on this device, but the server session could not be revoked.");
+    });
   };
-  const handleProfileSave = (updatedProfile) => {
-    if (role === "admin") setProfile(updatedProfile);
-    else setSalespeople(salespeople.map((person) => person.id === session.id ? { ...person, ...updatedProfile } : person));
+  const handleProfileSave = async (updatedProfile) => {
+    const id = role === "admin" ? "admin" : session.id;
+    const savedProfile = await saveProfile(id, updatedProfile);
+    if (role === "admin") setProfile(savedProfile);
+    else setSalespeople(salespeople.map((person) => person.id === session.id ? savedProfile : person));
     setModal(null);
     notify("Profile updated successfully.");
   };
@@ -845,35 +970,49 @@ export default function App() {
       notify("You can create a maximum of six salesperson profiles.");
       return;
     }
-    let updated = { ...details };
-    if (details.pin) updated.pin = await makePinRecord(details.pin);
-    else if (details.id) updated.pin = salespeople.find((person) => person.id === details.id)?.pin;
-    updated = { ...updated, active: details.id ? salespeople.find((person) => person.id === details.id)?.active !== false : true };
-    if (details.id) setSalespeople(salespeople.map((person) => person.id === details.id ? { ...person, ...updated } : person));
-    else {
-      updated.id = `sales-${crypto.randomUUID()}`;
-      setSalespeople([...salespeople, updated]);
-    }
+    const { id, pin, ...profileDetails } = details;
+    const updated = id
+      ? await saveProfile(id, { ...profileDetails, ...(pin ? { pin } : {}) })
+      : await createStaff({ ...profileDetails, pin });
+    setSalespeople((current) => id
+      ? current.map((person) => person.id === id ? updated : person)
+      : [...current, updated]);
     setModal(null);
-    notify(details.id ? "Salesperson profile updated." : "Salesperson profile created.");
+    notify(id ? "Salesperson profile updated." : "Salesperson profile created.");
   };
-  const handleStaffDelete = (person) => {
+  const handleStaffDelete = async (person) => {
     if (!window.confirm(`Remove ${person.name}'s profile? They will no longer be able to sign in.`)) return;
-    setSalespeople(salespeople.filter((item) => item.id !== person.id));
-    if (session?.id === person.id) signOut();
-    setModal(null);
-    notify("Salesperson profile removed.");
+    try {
+      await deleteStaff(person.id);
+      setSalespeople(salespeople.filter((item) => item.id !== person.id));
+      if (session?.id === person.id) signOut();
+      setModal(null);
+      notify("Salesperson profile removed.");
+    } catch (error) {
+      notify(error.message || "Could not remove this profile.");
+    }
   };
-  const handleStaffToggle = (personId) => {
-    setSalespeople(salespeople.map((person) => person.id === personId ? { ...person, active: person.active === false } : person));
-    notify("Salesperson profile status updated.");
+  const handleStaffToggle = async (personId) => {
+    const person = salespeople.find((item) => item.id === personId);
+    if (!person) return;
+    try {
+      const updated = await saveProfile(personId, { active: person.active === false });
+      setSalespeople(salespeople.map((item) => item.id === personId ? updated : item));
+      notify("Salesperson profile status updated.");
+    } catch (error) {
+      notify(error.message || "Could not update this profile.");
+    }
   };
   const handleAdminPinUpdate = async (currentPin, newPin) => {
-    if (!await verifyPin(currentPin, adminPin)) return false;
-    setAdminPin(await makePinRecord(newPin));
-    setModal(null);
-    notify("Administrator PIN updated.");
-    return true;
+    try {
+      await updateAdminPin(currentPin, newPin);
+      setModal(null);
+      notify("Administrator PIN updated.");
+      return true;
+    } catch (error) {
+      if (error.status === 401) return false;
+      throw error;
+    }
   };
   const handleArticleSubmit = (event, editingArticleId = null, closeModal = true) => {
     event.preventDefault();
@@ -926,7 +1065,7 @@ export default function App() {
     delete existingBooking.event;
     const nextBooking = {
       ...existingBooking,
-      id: existing?.id || `BK-2026-${1085 + bookings.length}`,
+      id: existing?.id || `BK-${today.slice(0, 4)}-${randomRecordSuffix()}`,
       bookingDate: existing ? existing.bookingDate : today,
       createdBy: existing ? existing.createdBy || existing.staff || currentProfile.name : currentProfile.name,
       createdById: existing ? existing.createdById : currentUserId,
@@ -967,7 +1106,7 @@ export default function App() {
     setBookings([nextBooking, ...bookings]);
     setArticles(articles.map((item) => selectedIds.includes(item.id) && item.status !== "Maintenance" ? { ...item, status: "Booked" } : item));
     if (paid > 0) setPayments([{
-      id: `PAY-${2082 + payments.length}`,
+      id: createRecordId("PAY"),
       booking: nextBooking.id,
       customer: nextBooking.customer,
       date: today,
@@ -999,12 +1138,12 @@ export default function App() {
   const handleCustomerSubmit = (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const next = { id: `CUS-${1043 + customers.length}`, name: form.get("name").trim(), phone: form.get("phone").trim(), phone2: form.get("phone2").trim(), address: form.get("address").trim(), city: form.get("city").trim(), cnic: form.get("cnic") || "—", bookings: 0, due: 0 };
+    const next = { id: createRecordId("CUS"), name: form.get("name").trim(), phone: form.get("phone").trim(), phone2: form.get("phone2").trim(), address: form.get("address").trim(), city: form.get("city").trim(), cnic: form.get("cnic") || "—", bookings: 0, due: 0 };
     setCustomers([next, ...customers]); setModal(null); notify("Customer added successfully.");
   };
   const handleBookingCustomerCreate = (details) => {
     const next = {
-      id: `CUS-${1043 + customers.length}`,
+      id: createRecordId("CUS"),
       name: details.name.trim(),
       phone: details.phone.trim(),
       phone2: details.phone2.trim(),
@@ -1027,7 +1166,7 @@ export default function App() {
     if (!Number.isFinite(amount) || amount <= 0) { notify("Enter a payment amount greater than zero."); return; }
     if (amount > Math.max(booking.amount - booking.paid, 0)) { notify("Payment cannot exceed the booking's remaining balance."); return; }
     setPayments([{
-      id: `PAY-${2082 + payments.length}`,
+      id: createRecordId("PAY"),
       booking: booking.id,
       customer: booking.customer,
       date: today,
@@ -1067,11 +1206,12 @@ export default function App() {
     }
     if (nextStatus === "Returned") handleReturn(booking.id);
   };
-  if (bootStage === "splash") return <SplashScreen />;
+  if (bootStage === "splash" || !authReady) return <SplashScreen />;
   if (!session) return <AccessScreen
     adminProfile={profile}
-    adminPin={adminPin}
+    adminPin={adminConfigured}
     salespeople={salespeople}
+    authError={authError}
     onAdminSetup={handleAdminSetup}
     onSignIn={handleSignIn}
   />;
@@ -1106,7 +1246,7 @@ export default function App() {
       case "staff": return <StaffPage salespeople={salespeople} onAdd={openAddStaff} onEdit={(person) => setModal({ type: "staff-edit", person })} onToggle={handleStaffToggle} onDelete={handleStaffDelete} onChangeAdminPin={() => setModal({ type: "admin-pin" })} />;
       case "settings": return <SettingsPage language={language} onLanguageChange={setLanguage} business={businessSettings} onSaveBusiness={setBusinessSettings} notifications={notificationSettings} onNotificationsChange={setNotificationSettings} onChangeAdminPin={() => setModal({ type: "admin-pin" })} onManageStaff={() => nav("staff")} onNotify={notify} />;
       case "profile": return <ProfilePage profile={currentProfile} role={role} onEdit={() => setModal({ type: "profile-edit" })} />;
-      default: return <Dashboard articles={articles} bookings={dashboardBookings} role={role} profile={currentProfile} onNavigate={nav} />;
+      default: return <Dashboard articles={articles} bookings={dashboardBookings} payments={payments} role={role} profile={currentProfile} onNavigate={nav} />;
     }
   })();
 
@@ -1114,22 +1254,22 @@ export default function App() {
     {mobileNav && <button className="mobile-backdrop" onClick={() => setMobileNav(false)} aria-label="Close navigation" />}
     <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
       <div className="brand"><div className="brand-mark"><span>DR</span><i>✦</i></div><div className="brand-name"><strong>Dulhan Rani</strong><span>BOUTIQUE MANAGEMENT</span></div><button className="sidebar-close icon-button" onClick={() => setMobileNav(false)}><X size={18} /></button></div>
-      <div className="workspace-switch"><span className="workspace-avatar">D</span><span><strong>Dulhan Rani Boutique</strong><small>SHEIKHUPURA, Pakistan</small></span><ChevronDown size={15} /></div>
+      <div className="workspace-switch"><span className="workspace-avatar">{businessSettings.name.slice(0, 1) || "D"}</span><span><strong>{businessSettings.name}</strong><small>{businessSettings.address || "Workspace"}</small></span><ChevronDown size={15} /></div>
       <nav className="side-nav">{visibleGroups.map((group) => <div className="nav-group" key={group.label}><span className="nav-label">{group.label}</span>
         {group.items.map(({ id, label, icon: Icon, badge }) => <button key={id} className={`nav-item ${activePage === id ? "nav-active" : ""}`} onClick={() => nav(id)}><Icon size={18} strokeWidth={1.8} /><span>{label}</span>{badge && <small className="nav-badge">{articles.length}</small>}</button>)}</div>)}</nav>
       <div className="sidebar-bottom"><div className="support-card"><span className="support-sparkle"><Sparkles size={16} /></span><strong>Need a hand?</strong><span>We’re here to help you get started.</span><button onClick={() => notify("Help center will be available soon.")}>Visit help center <ChevronRight size={14} /></button></div><button className="sidebar-profile" onClick={() => nav("profile")}><span className="avatar avatar-plum">{currentProfile.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span><span><strong>{currentProfile.name}</strong><small>{role === "admin" ? "Administrator" : "Salesperson"}</small></span><MoreHorizontal size={17} /></button></div>
     </aside>
     <main className="main-area"><header className="topbar"><div className="topbar-left"><button className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="Open menu"><Menu size={21} /></button><div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>{pageTitles[activePage]}</strong></div></div>
       <div className="topbar-right"><label className="global-search"><Search size={16} /><input placeholder="Search anything..." value={query} onChange={(event) => setQuery(event.target.value)} /><kbd>⌘ K</kbd></label>
-        <div className="notification-wrap"><button className="icon-button notification-button" aria-label="Notifications" onClick={() => setNotificationsOpen(!notificationsOpen)}><Bell size={18} /><i /></button>
+        <div className="notification-wrap"><button className="icon-button notification-button" aria-label="Notifications" onClick={() => setNotificationsOpen(!notificationsOpen)}><Bell size={18} />{hasNotifications && <i />}</button>
           {notificationsOpen && <div className="notification-popover"><strong>Notifications</strong>
-            {configuredNotifications.returns && <div><span className="notification-dot" /><p><b>Return due today</b><small>Midnight Blue Pishwas · Sana Fatima</small></p></div>}
-            {configuredNotifications.payments && <div><span className="notification-dot notification-orange" /><p><b>Payment follow-up</b><small>PKR 2,500 due · Ayesha Khan</small></p></div>}
-            {configuredNotifications.bookings && <div><span className="notification-dot" /><p><b>Booking pickup and return updates</b><small>Track each booking from reservation to return.</small></p></div>}
-            {!configuredNotifications.bookings && !configuredNotifications.payments && !configuredNotifications.returns && <p>No notification types are enabled.</p>}
+            {configuredNotifications.returns && returnAlerts.slice(0, 3).map((booking) => <div key={`return-${booking.id}`}><span className="notification-dot" /><p><b>Return due or overdue</b><small>{bookingArticleTitles(booking) || booking.id} · {booking.customer}</small></p></div>)}
+            {configuredNotifications.payments && paymentAlerts.slice(0, 3).map((booking) => <div key={`payment-${booking.id}`}><span className="notification-dot notification-orange" /><p><b>Payment follow-up</b><small>{currency(Math.max(Number(booking.amount) - Number(booking.paid), 0))} due · {booking.customer}</small></p></div>)}
+            {configuredNotifications.bookings && bookingAlerts.slice(0, 3).map((booking) => <div key={`booking-${booking.id}`}><span className="notification-dot" /><p><b>Delivery scheduled today</b><small>{bookingArticleTitles(booking) || booking.id} · {booking.customer}</small></p></div>)}
+            {!hasNotifications && <p>No current alerts.</p>}
             <button onClick={() => { nav("returns"); setNotificationsOpen(false); }}>View all alerts <ChevronRight size={14} /></button></div>}</div>
         <span className="topbar-divider" /><ProfileMenu role={role} profile={currentProfile} onProfile={() => nav("profile")} onSignOut={signOut} /></div></header>
-      <div className="page-content">{content}<footer className="app-footer"><span>© 2026 Dulhan Rani Boutique</span><span className={`sync-indicator sync-${syncStatus}`} role="status" title={syncError}><i />{syncStatus === "synced" ? "Cloud synced · local backup saved" : syncStatus === "syncing" ? "Syncing · local backup saved" : "Cloud unavailable · saved locally"}</span><span>Made for your boutique <span className="heart">♥</span></span></footer></div>
+      <div className="page-content">{content}<footer className="app-footer"><span>© {new Date().getFullYear()} {businessSettings.name}</span><span className={`sync-indicator sync-${syncStatus}`} role="status" title={syncError}><i />{syncStatus === "synced" ? "Cloud synced · local backup saved" : syncStatus === "syncing" ? "Syncing · local backup saved" : "Cloud unavailable · saved locally"}</span><span>Made for your boutique <span className="heart">♥</span></span></footer></div>
     </main>
     {modal?.type === "article" && <Modal title="Add new article" description="Add a rental piece to your boutique collection." onClose={() => setModal(null)}>
       <ArticleForm onSubmit={handleArticleSubmit} onCancel={() => setModal(null)} />
@@ -1266,7 +1406,7 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
     <div className="booking-measurements field-full"><strong>Customer measurements <span>(optional · inches)</span></strong><div><Field label="Chest"><input name="chest" type="number" min="0" step="0.1" defaultValue={booking?.chest || ""} placeholder="Chest size" /></Field><Field label="Back"><input name="back" type="number" min="0" step="0.1" defaultValue={booking?.back || ""} placeholder="Back size" /></Field><Field label="Hip"><input name="hip" type="number" min="0" step="0.1" defaultValue={booking?.hip || ""} placeholder="Hip size" /></Field></div></div>
     <Field label="Delivery date *"><input type="date" name="delivery" min={booking ? undefined : today} value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} required /></Field>
     <Field label="Expected return date *"><input type="date" name="returnDate" min={deliveryDate || (booking ? undefined : today)} defaultValue={booking?.returnDate || ""} required /></Field>
-    <Field label="Agreed rental price (PKR) *"><input type="number" name="amount" min="1" placeholder="4500" value={amount} onChange={(event) => setAmount(event.target.value)} required />
+    <Field label="Agreed rental price (PKR) *"><input type="number" name="amount" min="1" placeholder="Enter rental price" value={amount} onChange={(event) => setAmount(event.target.value)} required />
       {selectedArticles.length > 0 && <small className="suggested-price">Suggested total for {selectedArticles.length} article{selectedArticles.length === 1 ? "" : "s"}: {currency(selectedArticles.reduce((sum, item) => sum + item.price, 0))}</small>}</Field>
     <Field label={booking ? "Advance received (PKR)" : "Advance payment (PKR)"}><input type="number" name="paid" min="0" value={paid} onChange={(event) => setPaid(event.target.value)} readOnly={Boolean(booking)} />{booking && <small className="suggested-price">Payments are managed from the Payments page.</small>}</Field>
     {!booking && <Field label="Payment method"><select name="method"><option>Cash</option><option>Bank transfer</option><option>JazzCash</option><option>Easypaisa</option></select></Field>}
@@ -1283,8 +1423,8 @@ function CityOptions() {
 
 function ArticleForm({ article, onSubmit, onCancel, onSaved }) {
   const [photo, setPhoto] = useState(article?.photo || "");
-  const [priceMin, setPriceMin] = useState(String(article?.priceMin ?? Math.max(1000, (article?.price || 4500) - 500)));
-  const [priceMax, setPriceMax] = useState(String(article?.priceMax ?? (article?.price || 4500) + 500));
+  const [priceMin, setPriceMin] = useState(String(article?.priceMin ?? (article ? Math.max(0, article.price - 500) : "")));
+  const [priceMax, setPriceMax] = useState(String(article?.priceMax ?? (article ? article.price + 500 : "")));
   const submit = (event) => {
     const savedArticle = onSubmit(event, article?.id || null);
     if (savedArticle && !article) onSaved?.(savedArticle);
@@ -1309,5 +1449,5 @@ function SplashScreen() {
     <div className="splash-mark"><span>DR</span><i>✦</i></div>
     <p className="splash-overline">WELCOME TO</p><h1>Dulhan Rani</h1><p className="splash-subtitle">BOUTIQUE MANAGEMENT</p>
     <div className="splash-loader"><span /></div>
-  </div><span className="splash-copyright">SHEIKHUPURA · Pakistan</span></main>;
+  </div><span className="splash-copyright">BOUTIQUE MANAGEMENT</span></main>;
 }

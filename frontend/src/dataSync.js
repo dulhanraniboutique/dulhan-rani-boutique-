@@ -1,4 +1,6 @@
-const collections = new Set(["articles", "bookings", "customers", "payments"]);
+import { getSessionToken } from "./auth.js";
+
+const collections = new Set(["articles", "bookings", "customers", "payments", "settings"]);
 const pendingStorageKey = "drb-sync-pending";
 const queues = new Map();
 const apiBase = import.meta.env.VITE_API_URL || "";
@@ -10,10 +12,12 @@ function reportStatus(status, error = "") {
 }
 
 async function request(path, options) {
+  const token = getSessionToken();
   const response = await fetch(`${apiBase}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options?.headers,
     },
   });

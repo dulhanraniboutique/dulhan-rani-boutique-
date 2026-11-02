@@ -20,10 +20,10 @@ npm install
 npm run dev
 ```
 
-The app keeps articles, bookings, customers, and payments in browser storage and
-synchronizes them with the API. It uses cached records while offline and retries
-pending changes when connectivity returns. Profile PINs remain local to each
-browser and are not part of the shared MongoDB data.
+The app synchronizes business records and workspace settings with the API. It
+keeps a local cache while offline and retries pending changes when connectivity
+returns. Staff profiles and hashed PINs are stored in MongoDB; the long-lived
+session token stays in the current browser until sign-out.
 
 ## Run the API with MongoDB
 
@@ -37,13 +37,17 @@ Copy-Item .env.example .env
 ```
 
 Set `MONGODB_URI` in `backend/.env` to the Atlas connection URI, set
-`MONGODB_DB` to the database name, and then start the API:
+`MONGODB_DB` to the database name, and set `INITIAL_ADMIN_SETUP_TOKEN` to a
+long random secret. The token is required once when creating the first
+administrator. Then start the API:
 
 ```powershell
 npm run dev
 ```
 
-The API stores each business record in its own MongoDB collection. Its health
+The API stores business records, workspace settings, staff profiles, and
+sessions in MongoDB. PINs are hashed by the backend, and API data routes require
+a signed-in session. Its health
 status is available at `http://localhost:4000/` (shows `MongoDB connected` when
 the database responds, or a sanitized error reason if it does not) and as JSON
 from `GET http://localhost:4000/api/health`.
@@ -51,14 +55,24 @@ Browser requests under `/api` are proxied to the local API by Vite. For a
 hosted frontend, set `VITE_API_URL` to the API base URL and configure the
 backend's `FRONTEND_URL` to the frontend origin.
 
-Existing browser records are uploaded when their MongoDB collection is empty.
-After a collection has records, MongoDB is the shared source of truth; each
-browser keeps a local cache and queues edits made while the API is unavailable.
+The first administrator setup and every later sign-in require a PIN. Sessions
+remain active across reloads until the user signs out. Each browser keeps a
+local cache and queues business-data changes while offline.
 
-**Security before internet deployment:** administrator and salesperson PIN
-checks are still browser-only, and the API does not yet authenticate users.
-Do not expose this API publicly until server-side authentication and
-authorization are implemented. CORS is not an access-control mechanism.
+To clear all existing demo and workspace records before starting fresh, first
+update `MONGODB_URI` with a newly rotated database password, then run this once
+from `backend/` with the exact database name from `MONGODB_DB`:
+
+```powershell
+$env:CONFIRM_WORKSPACE_RESET = "your-database-name"
+npm run reset:workspace
+Remove-Item Env:\CONFIRM_WORKSPACE_RESET
+```
+
+This deletes all business records, settings, administrator/staff accounts, and
+sessions in that database. The frontend clears its old `drb-*` browser cache
+once after its next deployment. After the reset, create the administrator
+again using `INITIAL_ADMIN_SETUP_TOKEN`.
 
 ## Deploy frontend and backend to Vercel
 
@@ -72,8 +86,9 @@ repository:
    Directory** to `backend`. Vercel detects the Express app in
    `src/server.js`.
 3. In the backend project's Vercel environment variables, set `MONGODB_URI`,
-   `MONGODB_DB`, and `FRONTEND_URL` (the exact deployed frontend origin, without
-   a trailing slash). Set them for Production and Preview as appropriate.
+   `MONGODB_DB`, `FRONTEND_URL` (the exact deployed frontend origin, without
+   a trailing slash), and a strong `INITIAL_ADMIN_SETUP_TOKEN`. Set them for
+   Production and Preview as appropriate.
 4. In the frontend project's environment variables, set `VITE_API_URL` to the
    backend deployment origin, without a trailing slash, then redeploy.
 5. Add the deployed API host to the MongoDB Atlas Network Access allowlist.
@@ -82,9 +97,5 @@ repository:
 
 The frontend's local Vite proxy is only for local development; deployed builds
 use `VITE_API_URL`. Confirm the API at `/api/health` reports a connected
-database before testing cross-device synchronization.
-
-**Do not deploy the current API publicly yet.** The app's PIN checks are
-browser-only and API routes currently have no authentication or authorization,
-so anyone who can reach the API could read, add, change, or delete business
-records. Add server-side authentication and access controls before exposing it.
+database, run the workspace reset if starting fresh, and create the first
+administrator before using the workspace.
