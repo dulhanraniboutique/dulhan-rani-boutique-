@@ -1374,10 +1374,13 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
   const [articleCategory, setArticleCategory] = useState("All categories");
   const [articleSearch, setArticleSearch] = useState("");
   const categories = categoriesForArticles(articles);
-  const outfitCategories = categories.filter((category) => category !== "Jewellery Set");
-  const matchingArticles = articles.filter((item) => item.category !== "Jewellery Set"
-    && (item.status === "Available" || selectedArticleIds.includes(item.id))
-    && (selectedArticleIds.includes(item.id) || articleCategory === "All categories" || item.category === articleCategory)
+  const hasOutfit = selectedArticles.some((item) => item.category !== "Jewellery Set");
+  const hideMeasurements = !hasOutfit
+    && (articleCategory === "Jewellery Set" || (articleCategory === "All categories" && jewelleryOnly));
+  const matchingArticles = articles.filter((item) => (item.status === "Available" || selectedArticleIds.includes(item.id))
+    && (articleCategory === "Jewellery Set"
+      ? item.category === "Jewellery Set"
+      : item.category !== "Jewellery Set" && (articleCategory === "All categories" || item.category === articleCategory))
     && (selectedArticleIds.includes(item.id) || !articleSearch.trim() || `${item.id} ${item.name} ${item.category}`.toLowerCase().includes(articleSearch.trim().toLowerCase())));
   const jewellerySets = articles.filter((item) => item.category === "Jewellery Set"
     && (item.status === "Available" || selectedArticleIds.includes(item.id)));
@@ -1414,17 +1417,17 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
   };
   return <form className="form-grid" onSubmit={(event) => onSubmit(event, booking?.id || null)}>
     <div className="booking-article-picker field-full"><strong>Select articles * <span>Choose one or more items. Jewellery sets can be booked separately or with an outfit.</span></strong>
-      <Field label="Category"><select aria-label="Filter articles by category" value={articleCategory} onChange={(event) => setArticleCategory(event.target.value)}><option>All categories</option>{outfitCategories.map((category) => <option key={category}>{category}</option>)}</select></Field>
+      <Field label="Category"><select aria-label="Filter articles by category" value={articleCategory} onChange={(event) => setArticleCategory(event.target.value)}><option>All categories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select></Field>
       <label className="booking-article-search"><Search size={15} /><input type="search" aria-label="Search articles for booking" placeholder="Type article name or number..." value={articleSearch} onChange={(event) => setArticleSearch(event.target.value)} /></label>
       <div className="booking-article-options">{matchingArticles.map((article) => <BookingArticleOption key={article.id} article={article} selected={selectedArticleIds.includes(article.id)} onToggle={toggleArticle} />)}
       {matchingArticles.length === 0 && <p className="booking-article-empty">{articleSearch.trim() ? "No matching articles found." : "No available articles."}</p>}</div>
-      <section className="booking-jewellery-section" aria-label="Jewellery set selection">
+      {articleCategory !== "Jewellery Set" && <section className="booking-jewellery-section" aria-label="Jewellery set selection">
         <strong>Jewellery sets <span>Optional — book alone or with an outfit.</span></strong>
         {jewellerySets.length
           ? <div className="booking-article-options">{jewellerySets.map((article) => <BookingArticleOption key={article.id} article={article} selected={selectedArticleIds.includes(article.id)} onToggle={toggleArticle} icon={Gem} />)}</div>
           : <p className="booking-article-empty">No jewellery sets available. Add a Jewellery Set article to your collection.</p>}
         {onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={() => onAddArticle("Jewellery Set")}>Add jewellery set</Button>}
-      </section>
+      </section>}
       {selectedArticles.length > 0 && <p className="booking-selected-count">{selectedArticles.length} article{selectedArticles.length === 1 ? "" : "s"} selected</p>}
       {onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={() => onAddArticle()}>Add new article to collection</Button>}
     </div>
@@ -1456,7 +1459,7 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
       </div>}
     </div>
     <Field label="Booking date"><input type="date" value={booking?.bookingDate || today} readOnly /></Field>
-    {!jewelleryOnly && <div className="booking-measurements field-full"><strong>Customer measurements <span>(optional · inches)</span></strong><div><Field label="Chest"><input name="chest" type="number" min="0" step="0.1" defaultValue={booking?.chest || ""} placeholder="Chest size" /></Field><Field label="Back"><input name="back" type="number" min="0" step="0.1" defaultValue={booking?.back || ""} placeholder="Back size" /></Field><Field label="Hip"><input name="hip" type="number" min="0" step="0.1" defaultValue={booking?.hip || ""} placeholder="Hip size" /></Field></div></div>}
+    {!hideMeasurements && <div className="booking-measurements field-full"><strong>Customer measurements <span>(optional · inches)</span></strong><div><Field label="Chest"><input name="chest" type="number" min="0" step="0.1" defaultValue={booking?.chest || ""} placeholder="Chest size" /></Field><Field label="Back"><input name="back" type="number" min="0" step="0.1" defaultValue={booking?.back || ""} placeholder="Back size" /></Field><Field label="Hip"><input name="hip" type="number" min="0" step="0.1" defaultValue={booking?.hip || ""} placeholder="Hip size" /></Field></div></div>}
     <Field label="Delivery date *"><input type="date" name="delivery" min={booking ? undefined : today} value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} required /></Field>
     <Field label="Expected return date *"><input type="date" name="returnDate" min={deliveryDate || (booking ? undefined : today)} defaultValue={booking?.returnDate || ""} required /></Field>
     <Field label="Agreed rental price (PKR) *"><input type="number" name="amount" min="1" placeholder="Enter rental price" value={amount} onChange={(event) => setAmount(event.target.value)} required />
