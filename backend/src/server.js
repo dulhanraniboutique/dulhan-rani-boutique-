@@ -28,16 +28,26 @@ async function connectToDatabase() {
   return mongoClient;
 }
 
+async function checkDatabaseConnection() {
+  await (await connectToDatabase()).db(process.env.MONGODB_DB).command({ ping: 1 });
+}
+
 app.use(cors({ origin: frontendUrl }));
 app.use(express.json({ limit: "25mb" }));
 
-app.get("/", (_request, response) => {
-  response.json({ service: "DRB API", health: "/api/health" });
+app.get("/", async (_request, response) => {
+  try {
+    await checkDatabaseConnection();
+    response.type("text/plain").send("MongoDB connected");
+  } catch (error) {
+    console.error("Database health check failed:", error.message);
+    response.status(503).type("text/plain").send("MongoDB disconnected");
+  }
 });
 
 app.get("/api/health", async (_request, response, next) => {
   try {
-    await (await connectToDatabase()).db(process.env.MONGODB_DB).command({ ping: 1 });
+    await checkDatabaseConnection();
     response.json({ status: "ok", database: "connected" });
   } catch (error) {
     next(error);

@@ -44,10 +44,11 @@ npm run dev
 ```
 
 The API stores each business record in its own MongoDB collection. Its health
-endpoint is `GET http://localhost:4000/api/health`; browser requests under `/api`
-are proxied to the local API by Vite. For a hosted frontend, set
-`VITE_API_URL` to the API base URL and configure the backend's `FRONTEND_URL` to
-the frontend origin.
+status is available at `http://localhost:4000/` (shows `MongoDB connected` when
+the database responds) and as JSON from `GET http://localhost:4000/api/health`.
+Browser requests under `/api` are proxied to the local API by Vite. For a
+hosted frontend, set `VITE_API_URL` to the API base URL and configure the
+backend's `FRONTEND_URL` to the frontend origin.
 
 Existing browser records are uploaded when their MongoDB collection is empty.
 After a collection has records, MongoDB is the shared source of truth; each
