@@ -32,6 +32,13 @@ async function checkDatabaseConnection() {
   await (await connectToDatabase()).db(process.env.MONGODB_DB).command({ ping: 1 });
 }
 
+function getDatabaseErrorMessage(error) {
+  const message = error instanceof Error ? error.message : "Unknown database connection error.";
+  return message
+    .replace(/mongodb(?:\+srv)?:\/\/[^\s"'<>]+/gi, "[MongoDB connection URI]")
+    .slice(0, 500);
+}
+
 app.use(cors({ origin: frontendUrl }));
 app.use(express.json({ limit: "25mb" }));
 
@@ -40,17 +47,20 @@ app.get("/", async (_request, response) => {
     await checkDatabaseConnection();
     response.type("text/plain").send("MongoDB connected");
   } catch (error) {
-    console.error("Database health check failed:", error.message);
-    response.status(503).type("text/plain").send("MongoDB disconnected");
+    const reason = getDatabaseErrorMessage(error);
+    console.error("Database health check failed:", reason);
+    response.status(503).type("text/plain").send(`MongoDB disconnected: ${reason}`);
   }
 });
 
-app.get("/api/health", async (_request, response, next) => {
+app.get("/api/health", async (_request, response) => {
   try {
     await checkDatabaseConnection();
     response.json({ status: "ok", database: "connected" });
   } catch (error) {
-    next(error);
+    const reason = getDatabaseErrorMessage(error);
+    console.error("Database health check failed:", reason);
+    response.status(503).json({ status: "error", database: "disconnected", error: reason });
   }
 });
 
