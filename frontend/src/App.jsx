@@ -118,14 +118,14 @@ function useSyncedData(collection, fallback, enabled) {
     const synchronize = () => {
       const original = valueRef.current;
       const originalRevision = revisionRef.current;
-      loadCollection(collection, () => valueRef.current)
+      loadCollection(collection)
         .then((remote) => applyRemote(remote, original, originalRevision))
         .catch(() => {});
     };
 
     const refresh = () => {
       const revision = revisionRef.current;
-      refreshCollection(collection, () => valueRef.current)
+      refreshCollection(collection)
         .then((remote) => {
           if (!active || revisionRef.current !== revision) return;
           valueRef.current = remote;
@@ -1036,6 +1036,22 @@ export default function App() {
     notify(editingArticleId ? "Article changes saved." : "Article added to your collection.");
     return next;
   };
+  const handleArticleDelete = (article) => {
+    if (role !== "admin") {
+      notify("Only an administrator can delete articles.");
+      return;
+    }
+    const activeBooking = bookings.find((booking) => bookingArticleIds(booking).includes(article.id)
+      && !["Returned", "Cancelled"].includes(booking.status));
+    if (activeBooking) {
+      notify(`This article is reserved in booking ${activeBooking.id}. Complete or cancel that booking before deleting it.`);
+      return;
+    }
+    if (!window.confirm(`Delete ${article.name} (${article.id})? This cannot be undone.`)) return;
+    setArticles((current) => current.filter((item) => item.id !== article.id));
+    setModal(null);
+    notify("Article deleted.");
+  };
   const handleBookingSubmit = (event, editingBookingId = null) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -1275,7 +1291,7 @@ export default function App() {
       <ArticleForm onSubmit={handleArticleSubmit} onCancel={() => setModal(null)} />
     </Modal>}
     {modal?.type === "article-edit" && <Modal title="Edit article" description="Update article details or replace and crop its photo." onClose={() => setModal(null)}>
-      <ArticleForm article={modal.article} onSubmit={handleArticleSubmit} onCancel={() => setModal(null)} />
+      <ArticleForm article={modal.article} onSubmit={handleArticleSubmit} onCancel={() => setModal(null)} onDelete={handleArticleDelete} isAdmin={role === "admin"} />
     </Modal>}
     {modal?.type === "booking" && <Modal title="Create a booking" description="Reserve an article and capture the rental details." onClose={() => setModal(null)} wide>
       <BookingForm articles={articles} customers={customers} onCreateCustomer={handleBookingCustomerCreate} onSubmit={handleBookingSubmit} onCancel={() => setModal(null)} onAddArticle={() => setModal({ ...modal, quickArticle: true })} addedArticleId={quickCreatedArticleId} onAddedArticleHandled={() => setQuickCreatedArticleId("")} />
@@ -1421,7 +1437,7 @@ function CityOptions() {
   return <datalist id="customer-cities">{["Lahore", "Karachi", "Islamabad", "Rawalpindi", "Faisalabad", "Multan", "Peshawar", "Quetta", "Sialkot", "Gujranwala", "Sheikhupura", "Gujrat", "Bahawalpur", "Sargodha", "Hyderabad"].map((city) => <option value={city} key={city} />)}</datalist>;
 }
 
-function ArticleForm({ article, onSubmit, onCancel, onSaved }) {
+function ArticleForm({ article, onSubmit, onCancel, onSaved, onDelete, isAdmin = true }) {
   const [photo, setPhoto] = useState(article?.photo || "");
   const [priceMin, setPriceMin] = useState(String(article?.priceMin ?? (article ? Math.max(0, article.price - 500) : "")));
   const [priceMax, setPriceMax] = useState(String(article?.priceMax ?? (article ? article.price + 500 : "")));
@@ -1440,7 +1456,7 @@ function ArticleForm({ article, onSubmit, onCancel, onSaved }) {
     <PhotoUpload value={photo} onChange={setPhoto} />
     <input className="form-hidden" type="hidden" name="photoData" value={photo} readOnly />
     <input className="form-hidden" type="hidden" name="color" value={article?.color || "rose"} readOnly />
-    <div className="modal-actions"><Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={article ? Check : Plus}>{article ? "Save article" : "Add article"}</Button></div>
+    <div className="modal-actions">{article && isAdmin && <Button variant="danger" type="button" icon={Trash2} onClick={() => onDelete(article)}>Delete article</Button>}<Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={article ? Check : Plus}>{article ? "Save article" : "Add article"}</Button></div>
   </form>;
 }
 

@@ -107,7 +107,7 @@ export function mergeChanges(items, changes) {
   return [...merged.values()];
 }
 
-export function loadCollection(collection, getLocalItems) {
+export function loadCollection(collection) {
   if (!collections.has(collection)) throw new Error(`Unknown collection: ${collection}`);
 
   return enqueue(collection, async () => {
@@ -117,10 +117,8 @@ export function loadCollection(collection, getLocalItems) {
     if (!Array.isArray(result.items)) throw new Error(`Invalid ${collection} response from the API.`);
 
     if (result.items.length === 0) {
-      const localItems = getLocalItems();
-      await sendChanges(collection, { upserts: localItems, deletes: [] });
       reportStatus("synced");
-      return localItems;
+      return [];
     }
 
     reportStatus("synced");
@@ -150,7 +148,7 @@ export function persistCollectionChanges(collection, previousItems, nextItems) {
   });
 }
 
-export function refreshCollection(collection, getLocalItems) {
+export function refreshCollection(collection) {
   if (!collections.has(collection)) throw new Error(`Unknown collection: ${collection}`);
   return enqueue(collection, async () => {
     reportStatus("syncing");
@@ -158,10 +156,8 @@ export function refreshCollection(collection, getLocalItems) {
     const result = await request(`/api/data/${collection}`);
     if (!Array.isArray(result.items)) throw new Error(`Invalid ${collection} response from the API.`);
     if (result.items.length === 0) {
-      const localItems = getLocalItems();
-      await sendChanges(collection, { upserts: localItems, deletes: [] });
       reportStatus("synced");
-      return localItems;
+      return [];
     }
     reportStatus("synced");
     return result.items;
