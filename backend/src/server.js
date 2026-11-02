@@ -31,6 +31,10 @@ async function connectToDatabase() {
 app.use(cors({ origin: frontendUrl }));
 app.use(express.json({ limit: "25mb" }));
 
+app.get("/", (_request, response) => {
+  response.json({ service: "DRB API", health: "/api/health" });
+});
+
 app.get("/api/health", async (_request, response, next) => {
   try {
     await (await connectToDatabase()).db(process.env.MONGODB_DB).command({ ping: 1 });
