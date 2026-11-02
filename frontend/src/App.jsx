@@ -27,6 +27,11 @@ const defaultBusinessSettings = {
 };
 const defaultNotificationSettings = { bookings: true, payments: true, returns: true };
 const emptyProfile = { name: "", email: "", phone: "" };
+const articleCategories = ["Bridal Wear", "Party Wear", "Groom Wear", "Men's Wear", "Jewellery Set"];
+const categoriesForArticles = (articles) => [
+  ...articleCategories,
+  ...new Set(articles.map((article) => article.category).filter((category) => category && !articleCategories.includes(category))),
+];
 const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const bookingArticleIds = (booking) => booking.articles?.map((article) => typeof article === "string" ? article : article.id) || (booking.article ? [booking.article] : []);
 const bookingArticleNames = (booking) => booking.articles?.map((article) => typeof article === "string" ? article : article.name).filter(Boolean) || (booking.articleName ? [booking.articleName] : []);
@@ -284,13 +289,14 @@ function Availability({ label, count, total, tone }) {
 function ArticlesPage({ articles, query, onQueryChange, onAdd, onEdit }) {
   const [category, setCategory] = useState("All categories");
   const [availability, setAvailability] = useState("All statuses");
+  const categories = categoriesForArticles(articles);
   const filtered = articles.filter((article) => `${article.id} ${article.name} ${article.category}`.toLowerCase().includes(query.toLowerCase())
     && (category === "All categories" || article.category === category)
     && (availability === "All statuses" || article.status === availability));
   return <>
     <PageHeader eyebrow="INVENTORY" title="Article collection" description="Manage your rental pieces, photos, pricing and availability." action actionLabel="Add new article" onAction={onAdd} />
     <div className="toolbar"><div className="toolbar-search"><Search size={16} /><input placeholder="Search article number or name..." value={query} onChange={(event) => onQueryChange(event.target.value)} /></div>
-      <div className="toolbar-controls"><select value={category} onChange={(event) => setCategory(event.target.value)}><option>All categories</option><option>Bridal Wear</option><option>Party Wear</option><option>Formal Wear</option></select>
+      <div className="toolbar-controls"><select value={category} onChange={(event) => setCategory(event.target.value)}><option>All categories</option>{categories.map((item) => <option key={item}>{item}</option>)}</select>
         <select aria-label="Filter by availability" value={availability} onChange={(event) => setAvailability(event.target.value)}><option>All statuses</option><option>Available</option><option>Booked</option><option>Maintenance</option></select></div></div>
     <div className="inventory-summary"><span><strong>{filtered.length}</strong> articles found</span><span><i className="dot-green" /> Available <b>{articles.filter((item) => item.status === "Available").length}</b><i className="dot-plum" /> Booked <b>{articles.filter((item) => item.status === "Booked").length}</b></span></div>
     <div className="article-grid">{filtered.map((article) => <ArticleCard key={article.id} article={article} onEdit={onEdit} />)}
@@ -431,7 +437,7 @@ function ReturnsPage({ bookings, onReturn }) {
   return <>
     <PageHeader eyebrow="RENTAL OPERATIONS" title="Returns & tracking" description="Keep every rental on schedule, from delivery to return." />
     <div className="return-alert"><div className="alert-icon"><Clock3 size={20} /></div><div><strong>{out.length} items currently with customers</strong><span>Check expected return dates and prepare upcoming reservations.</span></div><button onClick={() => document.getElementById("returns-list")?.scrollIntoView({ behavior: "smooth" })}>View items <ChevronRight size={16} /></button></div>
-    <div className="booking-stats"><MiniMetric label="Currently rented" value={out.length} tone="orange" /><MiniMetric label="Due today" value={out.filter((b) => b.returnDate === today).length + 1} tone="plum" /><MiniMetric label="Upcoming deliveries" value={active.filter((b) => b.delivery >= today).length} tone="green" /><MiniMetric label="Overdue" value="0" /></div>
+    <div className="booking-stats"><MiniMetric label="Currently rented" value={out.length} tone="orange" /><MiniMetric label="Due today" value={out.filter((booking) => booking.returnDate === today).length} tone="plum" /><MiniMetric label="Upcoming deliveries" value={active.filter((booking) => booking.delivery >= today).length} tone="green" /><MiniMetric label="Overdue" value={out.filter((booking) => booking.returnDate < today).length} /></div>
     <section className="panel table-panel" id="returns-list"><div className="panel-heading table-title"><div><h2>Rental tracking</h2><p>Confirm returns as soon as the article is received and checked.</p></div></div>
       <div className="table-scroll"><table><thead><tr><th>BOOKING</th><th>ARTICLE</th><th>CUSTOMER</th><th>DELIVERY DATE</th><th>EXPECTED RETURN</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>
         {active.map((booking) => <tr key={booking.id}><td className="strong-cell">{booking.id}</td><td><strong>{bookingArticleTitles(booking)}</strong><small className="sub-cell">{bookingArticleLabels(booking)}</small></td><td>{booking.customer}<small className="sub-cell">{booking.phone}</small></td><td>{readableDate(booking.delivery)}</td><td>{readableDate(booking.returnDate)}</td><td><Status>{booking.status === "Out" ? booking.returnDate < today ? "Overdue" : "With customer" : "Upcoming"}</Status></td>
@@ -1345,9 +1351,12 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
   const [selectedArticleIds, setSelectedArticleIds] = useState(booking ? bookingArticleIds(booking) : []);
   const selectedArticles = articles.filter((item) => selectedArticleIds.includes(item.id));
   const [deliveryDate, setDeliveryDate] = useState(booking?.delivery || "");
+  const [articleCategory, setArticleCategory] = useState("All categories");
   const [articleSearch, setArticleSearch] = useState("");
+  const categories = categoriesForArticles(articles);
   const matchingArticles = articles.filter((item) => (item.status === "Available" || selectedArticleIds.includes(item.id))
-    && (!articleSearch.trim() || `${item.id} ${item.name} ${item.category}`.toLowerCase().includes(articleSearch.trim().toLowerCase())));
+    && (selectedArticleIds.includes(item.id) || articleCategory === "All categories" || item.category === articleCategory)
+    && (selectedArticleIds.includes(item.id) || !articleSearch.trim() || `${item.id} ${item.name} ${item.category}`.toLowerCase().includes(articleSearch.trim().toLowerCase())));
   const initialCustomerId = booking?.customerId || customers.find((customer) => customer.name === booking?.customer)?.id || "";
   const [customerChoice, setCustomerChoice] = useState(initialCustomerId);
   const [showNewCustomer, setShowNewCustomer] = useState(false);
@@ -1375,7 +1384,8 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
     setShowNewCustomer(false);
   };
   return <form className="form-grid" onSubmit={(event) => onSubmit(event, booking?.id || null)}>
-    <div className="booking-article-picker field-full"><strong>Select articles * <span>Search by article name or number. Choose one or more items.</span></strong>
+    <div className="booking-article-picker field-full"><strong>Select articles * <span>Choose one or more items. Jewellery sets can be booked separately or with an outfit.</span></strong>
+      <Field label="Category"><select aria-label="Filter articles by category" value={articleCategory} onChange={(event) => setArticleCategory(event.target.value)}><option>All categories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select></Field>
       <label className="booking-article-search"><Search size={15} /><input type="search" aria-label="Search articles for booking" placeholder="Type article name or number..." value={articleSearch} onChange={(event) => setArticleSearch(event.target.value)} /></label>
       <div className="booking-article-options">{matchingArticles.map((article) => <label className={`booking-article-option${selectedArticleIds.includes(article.id) ? " selected" : ""}`} key={article.id}>
         <input type="checkbox" name="articles" value={article.id} checked={selectedArticleIds.includes(article.id)} onChange={(event) => {
@@ -1448,7 +1458,7 @@ function ArticleForm({ article, onSubmit, onCancel, onSaved, onDelete, isAdmin =
   return <form className="form-grid" onSubmit={submit}>
     <Field label="Article number *"><input name="id" defaultValue={article?.id || ""} readOnly={Boolean(article)} placeholder="e.g. DRB-BRT-032" required /></Field>
     <Field label="Article name *"><input name="name" defaultValue={article?.name || ""} placeholder="e.g. Rose Gold Bridal Lehnga" required /></Field>
-    <Field label="Category *"><select name="category" required defaultValue={article?.category || ""}><option value="" disabled>Select category</option><option>Bridal Wear</option><option>Party Wear</option><option>Formal Wear</option><option>Accessories</option></select></Field>
+    <Field label="Category *"><select name="category" required defaultValue={article?.category || ""}><option value="" disabled>Select category</option>{categoriesForArticles(article ? [article] : []).map((category) => <option key={category}>{category}</option>)}</select></Field>
     <Field label="Availability"><select name="status" defaultValue={article?.status || "Available"}><option>Available</option><option>Booked</option><option>Maintenance</option></select></Field>
     <Field label="Suggested rental minimum (PKR) *"><input name="priceMin" type="number" min="0" value={priceMin} onChange={(event) => setPriceMin(event.target.value)} placeholder="3000" required /></Field>
     <Field label="Suggested rental maximum (PKR) *"><input name="priceMax" type="number" min="0" value={priceMax} onChange={(event) => setPriceMax(event.target.value)} placeholder="5000" required /></Field>
