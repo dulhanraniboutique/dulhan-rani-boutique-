@@ -391,6 +391,26 @@ tbody tr:hover { background: #fdfbfc; }
 .settings-nav button { display: flex; align-items: center; gap: 8px; padding: 10px; border: 0; border-radius: 6px; background: transparent; color: #81747a; font-size: 10px; text-align: left; }
 .settings-nav button:hover,.settings-nav .settings-active { background: #f3eaf0; color: #723650; font-weight: 600; }
 .settings-panel { padding: 16px; }
+.notification-settings-intro { display: flex; align-items: center; gap: 11px; margin: 16px 0 12px; padding: 13px; border: 1px solid #eee5e9; border-radius: 8px; background: linear-gradient(110deg,#fcf8fa,#fff); }
+.notification-settings-intro > span { display: grid; width: 36px; height: 36px; flex: 0 0 36px; place-items: center; border-radius: 9px; background: #f3e8ee; color: var(--plum); }
+.notification-settings-intro > div { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 4px; }
+.notification-settings-intro strong { color: #503a45; font-size: 11px; }
+.notification-settings-intro small { color: #958990; font-size: 9px; line-height: 1.5; }
+.notification-settings-intro > b { padding: 5px 8px; border-radius: 20px; background: #f3e8ee; color: var(--plum); font-size: 8px; white-space: nowrap; }
+.settings-toggle-list { display: grid; gap: 9px; }
+.settings-toggle { display: flex; min-width: 0; align-items: center; gap: 11px; padding: 12px; border: 1px solid #eee9eb; border-radius: 8px; background: #fff; cursor: pointer; transition: border-color .15s ease,background .15s ease,box-shadow .15s ease; }
+.settings-toggle:hover { border-color: #dfcbd5; background: #fdfbfc; }
+.settings-toggle-on { border-color: #ead9e2; background: #fdf9fb; }
+.settings-toggle-icon { display: grid; width: 34px; height: 34px; flex: 0 0 34px; place-items: center; border-radius: 8px; background: #f5f2f3; color: #897a82; }
+.settings-toggle-on .settings-toggle-icon { background: #f2e5ec; color: var(--plum); }
+.settings-toggle-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 4px; }
+.settings-toggle-copy strong { color: #54414a; font-size: 10px; }
+.settings-toggle-copy small { color: #988c92; font-size: 9px; line-height: 1.45; }
+.settings-toggle input { position: relative; width: 38px; height: 22px; flex: 0 0 38px; margin: 0; appearance: none; border: 1px solid #dcd5d9; border-radius: 20px; background: #e8e4e6; cursor: pointer; transition: background .15s ease,border-color .15s ease; }
+.settings-toggle input::after { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #33212b30; content: ""; transition: transform .15s ease; }
+.settings-toggle input:checked { border-color: var(--plum); background: var(--plum); }
+.settings-toggle input:checked::after { transform: translateX(16px); }
+.settings-toggle input:focus-visible { outline: 3px solid #d9becb; outline-offset: 2px; }
 .settings-fields { display: grid; grid-template-columns: repeat(2,1fr); gap: 13px; margin: 17px 0; }
 .settings-language { display: grid; grid-template-columns: minmax(180px,1fr) minmax(0,2fr); align-items: end; gap: 13px; margin-top: 16px; }
 .settings-language p { margin: 0 0 10px; color: #968990; font-size: 9px; line-height: 1.5; }

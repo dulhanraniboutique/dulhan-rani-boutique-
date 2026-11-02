@@ -699,8 +699,19 @@ function SettingsPage({ language, onLanguageChange, business, onSaveBusiness, no
         {activeSection === "security" && <><div className="panel-heading"><div><h2>Security & access</h2><p>Manage sign-in protection for your boutique workspace.</p></div></div>
           <div className="settings-security-card"><span className="role-option-icon admin-icon"><LockKeyhole size={18} /></span><div><strong>Administrator PIN</strong><p>Your administrator profile is protected with a PIN. Salespeople use their individual PINs.</p></div><Status>Protected</Status></div>
           <div className="settings-security-actions"><Button variant="outline" icon={ShieldCheck} onClick={onChangeAdminPin}>Change administrator PIN</Button><Button variant="outline" icon={Users} onClick={onManageStaff}>Manage salesperson access</Button></div></>}
-        {activeSection === "notifications" && <><div className="panel-heading"><div><h2>Notifications</h2><p>Choose which in-app alerts appear in the notification menu.</p></div></div>
-          <div className="settings-toggle-list">{[["bookings","Booking updates","New and updated booking alerts"],["payments","Payment reminders","Outstanding balance and payment alerts"],["returns","Return reminders","Upcoming and overdue return alerts"]].map(([key,title,description]) => <label className="settings-toggle" key={key}><span><strong>{title}</strong><small>{description}</small></span><input type="checkbox" checked={notifications[key]} onChange={(event) => onNotificationsChange({ ...notifications, [key]: event.target.checked })} /></label>)}</div></>}
+        {activeSection === "notifications" && <>
+          <div className="panel-heading"><div><h2>Notifications</h2><p>Choose which in-app alerts appear in the notification menu.</p></div></div>
+          <div className="notification-settings-intro"><span><Bell size={18} /></span><div><strong>Stay up to date</strong><small>Your choices are saved automatically and apply to the notification menu.</small></div>          <b>{Object.values(notifications).filter(Boolean).length} <span>enabled</span></b></div>
+          <div className="settings-toggle-list">{[
+            ["bookings", "Booking updates", "New and updated booking alerts", CalendarDays],
+            ["payments", "Payment reminders", "Outstanding balance and payment alerts", Wallet],
+            ["returns", "Return reminders", "Upcoming and overdue return alerts", RotateCcw],
+          ].map(([key, title, description, Icon]) => <label className={`settings-toggle${notifications[key] ? " settings-toggle-on" : ""}`} key={key}>
+            <span className="settings-toggle-icon"><Icon size={18} /></span>
+            <span className="settings-toggle-copy"><strong>{title}</strong><small>{description}</small></span>
+            <input type="checkbox" aria-label={`${notifications[key] ? "Turn off" : "Turn on"} ${title}`} checked={Boolean(notifications[key])} onChange={(event) => onNotificationsChange({ ...notifications, [key]: event.target.checked })} />
+          </label>)}</div>
+        </>}
         {activeSection === "receipt" && <><div className="panel-heading"><div><h2>Receipt details</h2><p>These business details appear on printed booking receipts.</p></div></div>
           <div className="settings-fields"><Field label="Receipt business name"><input value={draft.name} onChange={updateDraft("name")} required /></Field><Field label="Contact phone"><input value={draft.phone} onChange={updateDraft("phone")} /></Field><Field label="Business address" className="field-full"><textarea rows="2" value={draft.address} onChange={updateDraft("address")} /></Field><Field label="Receipt footer message" className="field-full"><textarea rows="2" value={draft.receiptFooter} onChange={updateDraft("receiptFooter")} /></Field></div>
           <div className="settings-save"><span>{saved ? "Saved locally. Cloud sync status appears in the footer." : "Receipt details sync with the cloud."}</span><Button onClick={saveDraft} icon={Check}>Save receipt details</Button></div></>}
