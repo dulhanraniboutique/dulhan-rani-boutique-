@@ -49,9 +49,12 @@ const bookingArticleRecords = (booking, inventory) => {
       id: id || `article-${index + 1}`,
       name: name || booking.articleName?.split(",")[index]?.trim() || id || "Article",
       photo: (typeof savedArticle === "string" ? "" : savedArticle.photo) || inventoryArticle?.photo || "",
+      category: (typeof savedArticle === "string" ? "" : savedArticle.category) || inventoryArticle?.category || "",
     };
   });
 };
+const bookingHasJewellerySet = (booking, inventory) => bookingArticleRecords(booking, inventory)
+  .some((article) => article.category === "Jewellery Set");
 const dateAfter = (date, days) => {
   const result = new Date(`${date}T00:00:00Z`);
   result.setUTCDate(result.getUTCDate() + days);
@@ -80,6 +83,7 @@ const navGroups = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "articles", label: "Articles", icon: Shirt, badge: "6" },
     { id: "bookings", label: "Bookings", icon: CalendarDays },
+    { id: "jewellery-bookings", label: "Jewellery Set Booking", icon: Gem },
     { id: "customers", label: "Customers", icon: Users },
   ] },
   { label: "OPERATIONS", items: [
@@ -313,17 +317,18 @@ function ArticleCard({ article, onEdit }) {
       <div className="article-card-footer"><span>Min. order <strong>{currency(article.minOrder)}</strong></span><button aria-label={`Edit ${article.name}`} onClick={() => onEdit(article)}><Pencil size={15} /></button></div></div></article>;
 }
 
-function BookingsPage({ bookings, query, onQueryChange, onNew, onView, isAdmin, currentUserId, currentUserName, onEdit, onDelete, onStatusChange, onRecordPayment }) {
+function BookingsPage({ bookings, articles, query, onQueryChange, onNew, onView, isAdmin, currentUserId, currentUserName, onEdit, onDelete, onStatusChange, onRecordPayment, jewelleryOnly = false }) {
   const [filter, setFilter] = useState("All bookings");
   const [deliveryDate, setDeliveryDate] = useState("");
-  const visibleBookings = isAdmin ? bookings : bookings.filter((booking) => booking.createdById
+  const pageBookings = jewelleryOnly ? bookings.filter((booking) => bookingHasJewellerySet(booking, articles)) : bookings;
+  const visibleBookings = isAdmin ? pageBookings : pageBookings.filter((booking) => booking.createdById
     ? booking.createdById === currentUserId
     : (booking.createdBy || booking.staff) === currentUserName);
   const filtered = visibleBookings.filter((item) => `${item.id} ${item.customer} ${bookingArticleLabels(item)} ${bookingArticleTitles(item)}`.toLowerCase().includes(query.toLowerCase())
     && (filter === "All bookings" || item.status === filter)
     && (!deliveryDate || (item.delivery >= deliveryDate && item.delivery <= dateAfter(deliveryDate, 1))));
   return <>
-    <PageHeader eyebrow="RENTAL MANAGEMENT" title={isAdmin ? "Bookings" : "My bookings"} description="Track reservations, delivery dates and returns." action actionLabel="New booking" onAction={onNew} />
+    <PageHeader eyebrow="RENTAL MANAGEMENT" title={jewelleryOnly ? "Jewellery Set Booking" : isAdmin ? "Bookings" : "My bookings"} description={jewelleryOnly ? "View bookings that include a jewellery set, alone or with an outfit." : "Track reservations, delivery dates and returns."} action actionLabel="New booking" onAction={onNew} />
     <div className="booking-stats"><MiniMetric label="All bookings" value={visibleBookings.length} /><MiniMetric label="Confirmed" value={visibleBookings.filter((b) => b.status === "Confirmed").length} tone="plum" /><MiniMetric label="Currently out" value={visibleBookings.filter((b) => b.status === "Out").length} tone="orange" /><MiniMetric label="Returned" value={visibleBookings.filter((b) => b.status === "Returned").length} tone="green" /></div>
     <div className="toolbar"><div className="toolbar-search"><Search size={16} /><input placeholder="Search booking, customer or article..." value={query} onChange={(event) => onQueryChange(event.target.value)} /></div>
       <div className="toolbar-controls"><select value={filter} onChange={(event) => setFilter(event.target.value)}><option>All bookings</option><option>Confirmed</option><option>Out</option><option>Returned</option></select>
@@ -341,7 +346,7 @@ function BookingsPage({ bookings, query, onQueryChange, onNew, onView, isAdmin, 
           {booking.status === "Out" && <Button variant="small" icon={Check} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Returned"); }}>Confirm return</Button>}
           {booking.status === "Out" && booking.amount > booking.paid && <Button variant="small" icon={Wallet} onClick={(event) => { event.stopPropagation(); onRecordPayment(booking); }}>Receive balance</Button>}
           {isAdmin && <><button className="icon-button" onClick={(event) => { event.stopPropagation(); onEdit(booking); }} aria-label={`Edit booking ${booking.id}`}><Pencil size={15} /></button><button className="icon-button booking-delete-button" onClick={(event) => { event.stopPropagation(); onDelete(booking); }} aria-label={`Delete booking ${booking.id}`}><Trash2 size={15} /></button></>}</div></td></tr>)}</tbody></table>
-      {filtered.length === 0 && <EmptyState title="No bookings found" detail="Try another search or add your first booking." />}</div></section>
+      {filtered.length === 0 && <EmptyState title={jewelleryOnly ? "No jewellery set bookings found" : "No bookings found"} detail={jewelleryOnly ? "Bookings with a jewellery set will appear here." : "Try another search or add your first booking."} />}</div></section>
   </>;
 }
 
@@ -895,6 +900,7 @@ export default function App() {
   const currentUserId = role === "admin" ? "admin" : session.id;
   const pageTitles = {
     dashboard: "Dashboard", articles: "Articles", bookings: role === "admin" ? "Bookings" : "My bookings", customers: "Customers",
+    "jewellery-bookings": "Jewellery Set Booking",
     payments: role === "admin" ? "Payments" : "Payments received", returns: "Returns & tracking", tomorrow: "Delivery prep", calendar: "Calendar", reports: "Reports",
     staff: "Staff & roles", settings: "Settings", profile: "My profile",
   };
@@ -1046,7 +1052,7 @@ export default function App() {
       if (!bookingArticleIds(booking).includes(editingArticleId)) return booking;
       const updatedArticles = booking.articles?.map((item) => typeof item === "string"
         ? item === editingArticleId ? { ...next } : item
-        : item.id === editingArticleId ? { ...item, name: next.name, photo: next.photo } : item);
+        : item.id === editingArticleId ? { ...item, name: next.name, photo: next.photo, category: next.category } : item);
       return { ...booking, ...(updatedArticles ? { articles: updatedArticles } : {}), articleName: bookingArticleIds(booking).map((id) => id === editingArticleId ? next.name : articles.find((item) => item.id === id)?.name || id).join(", ") };
     }));
     if (closeModal) setModal(null);
@@ -1093,7 +1099,7 @@ export default function App() {
     const amount = Number(form.get("amount")), paid = Number(form.get("paid"));
     if (amount < paid) { notify("Rental amount cannot be less than the advance already paid."); return; }
     if (existing && paid !== existing.paid) { notify("Payments must be changed from the Payments page."); return; }
-    const normalizedArticles = selectedArticles.map(({ id, name, photo, price }) => ({ id, name, photo, price }));
+    const normalizedArticles = selectedArticles.map(({ id, name, photo, price, category }) => ({ id, name, photo, price, category }));
     const existingBooking = existing ? { ...existing } : {};
     delete existingBooking.event;
     const nextBooking = {
@@ -1113,9 +1119,9 @@ export default function App() {
       returnDate,
       amount,
       paid,
-      chest: form.get("chest") || "",
-      back: form.get("back") || "",
-      hip: form.get("hip") || "",
+      chest: form.get("chest") || existing?.chest || "",
+      back: form.get("back") || existing?.back || "",
+      hip: form.get("hip") || existing?.hip || "",
       status: existing?.status || "Confirmed",
       staff: existing?.staff || (existing ? existing.createdBy : currentProfile.name),
       notes: form.get("notes"),
@@ -1269,7 +1275,8 @@ export default function App() {
   const content = (() => {
     switch (activePage) {
       case "articles": return <ArticlesPage articles={articles} query={filteredQuery} onQueryChange={setQuery} onAdd={openArticleModal} onEdit={openEditArticle} />;
-      case "bookings": return <BookingsPage bookings={bookings} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} />;
+      case "bookings": return <BookingsPage bookings={bookings} articles={articles} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} />;
+      case "jewellery-bookings": return <BookingsPage bookings={bookings} articles={articles} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} jewelleryOnly />;
       case "customers": return <CustomersPage customers={customers} query={filteredQuery} onQueryChange={setQuery} onAdd={openCustomerModal} />;
       case "payments": return <PaymentsPage payments={payments} bookings={bookings} query={filteredQuery} onQueryChange={setQuery} onAdd={openPaymentModal} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} salespeople={salespeople} adminProfile={profile} />;
       case "returns": return <ReturnsPage bookings={bookings} onReturn={handleReturn} />;
@@ -1282,6 +1289,7 @@ export default function App() {
       default: return <Dashboard articles={articles} bookings={dashboardBookings} payments={payments} role={role} profile={currentProfile} onNavigate={nav} />;
     }
   })();
+  const detailArticles = modal?.type === "booking-detail" ? bookingArticleRecords(modal.booking, articles) : [];
 
   return <div className="app-shell">
     {mobileNav && <button className="mobile-backdrop" onClick={() => setMobileNav(false)} aria-label="Close navigation" />}
@@ -1344,7 +1352,7 @@ export default function App() {
     {modal?.type === "booking-detail" && <Modal title="Booking details" description={`${modal.booking.id} · Created by ${modal.booking.createdBy || modal.booking.staff || "Unknown"}`} onClose={() => setModal(null)} className="receipt-modal">
       <div className="booking-detail"><header className="receipt-brand"><h1>{businessSettings.name || defaultBusinessSettings.name}</h1><p>{businessSettings.address}</p><p>{businessSettings.phone}{businessSettings.email ? ` · ${businessSettings.email}` : ""}</p><strong>Booking receipt · {modal.booking.id}</strong></header>
         <div className="detail-highlight"><span><CalendarDays size={18} /></span><div><strong>{modal.booking.customer}</strong><small>{modal.booking.phone}</small></div><Status>{modal.booking.status}</Status></div>
-        <div className="detail-lines"><div><span>Booking date</span><strong>{readableDate(modal.booking.bookingDate)}</strong></div><div><span>Booked by</span><strong>{modal.booking.createdBy || modal.booking.staff || "Unknown"}</strong></div><div><span>Articles</span><strong>{bookingArticleTitles(modal.booking)}</strong><small>{bookingArticleLabels(modal.booking)}</small></div><div><span>Delivery date</span><strong>{readableDate(modal.booking.delivery)}</strong></div><div><span>Return date</span><strong>{readableDate(modal.booking.returnDate)}</strong></div><div><span>Measurements</span><strong>{[modal.booking.chest && `Chest ${modal.booking.chest} in`, modal.booking.back && `Back ${modal.booking.back} in`, modal.booking.hip && `Hip ${modal.booking.hip} in`].filter(Boolean).join(" · ") || "Not provided"}</strong></div><div><span>Rental amount</span><strong>{currency(modal.booking.amount)}</strong></div><div><span>Paid to date</span><strong>{currency(modal.booking.paid)}</strong></div><div><span>Remaining balance</span><strong className={modal.booking.amount > modal.booking.paid ? "due-text" : "paid-text"}>{currency(Math.max(modal.booking.amount - modal.booking.paid, 0))}</strong></div></div>
+        <div className="detail-lines"><div><span>Booking date</span><strong>{readableDate(modal.booking.bookingDate)}</strong></div><div><span>Booked by</span><strong>{modal.booking.createdBy || modal.booking.staff || "Unknown"}</strong></div><div><span>Outfits</span><strong>{detailArticles.filter((article) => article.category !== "Jewellery Set").map((article) => article.name).join(", ") || "—"}</strong><small>{detailArticles.filter((article) => article.category !== "Jewellery Set").map((article) => article.id).join(", ")}</small></div><div><span>Jewellery sets</span><strong>{detailArticles.filter((article) => article.category === "Jewellery Set").map((article) => article.name).join(", ") || "—"}</strong><small>{detailArticles.filter((article) => article.category === "Jewellery Set").map((article) => article.id).join(", ")}</small></div><div><span>Delivery date</span><strong>{readableDate(modal.booking.delivery)}</strong></div><div><span>Return date</span><strong>{readableDate(modal.booking.returnDate)}</strong></div>{detailArticles.some((article) => article.category !== "Jewellery Set") && <div><span>Measurements</span><strong>{[modal.booking.chest && `Chest ${modal.booking.chest} in`, modal.booking.back && `Back ${modal.booking.back} in`, modal.booking.hip && `Hip ${modal.booking.hip} in`].filter(Boolean).join(" · ") || "Not provided"}</strong></div>}<div><span>Rental amount</span><strong>{currency(modal.booking.amount)}</strong></div><div><span>Paid to date</span><strong>{currency(modal.booking.paid)}</strong></div><div><span>Remaining balance</span><strong className={modal.booking.amount > modal.booking.paid ? "due-text" : "paid-text"}>{currency(Math.max(modal.booking.amount - modal.booking.paid, 0))}</strong></div></div>
         <section className="receipt-payment-history"><h3>Payment collection history</h3>
           {payments.filter((payment) => payment.booking === modal.booking.id).length
             ? <div className="table-scroll"><table><thead><tr><th>DATE</th><th>AMOUNT</th><th>METHOD</th><th>RECEIVED BY</th></tr></thead><tbody>
@@ -1361,6 +1369,7 @@ export default function App() {
 function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit, onCancel, onAddArticle, addedArticleId, onAddedArticleHandled }) {
   const [selectedArticleIds, setSelectedArticleIds] = useState(booking ? bookingArticleIds(booking) : []);
   const selectedArticles = articles.filter((item) => selectedArticleIds.includes(item.id));
+  const jewelleryOnly = selectedArticles.length > 0 && selectedArticles.every((item) => item.category === "Jewellery Set");
   const [deliveryDate, setDeliveryDate] = useState(booking?.delivery || "");
   const [articleCategory, setArticleCategory] = useState("All categories");
   const [articleSearch, setArticleSearch] = useState("");
@@ -1447,7 +1456,7 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
       </div>}
     </div>
     <Field label="Booking date"><input type="date" value={booking?.bookingDate || today} readOnly /></Field>
-    <div className="booking-measurements field-full"><strong>Customer measurements <span>(optional · inches)</span></strong><div><Field label="Chest"><input name="chest" type="number" min="0" step="0.1" defaultValue={booking?.chest || ""} placeholder="Chest size" /></Field><Field label="Back"><input name="back" type="number" min="0" step="0.1" defaultValue={booking?.back || ""} placeholder="Back size" /></Field><Field label="Hip"><input name="hip" type="number" min="0" step="0.1" defaultValue={booking?.hip || ""} placeholder="Hip size" /></Field></div></div>
+    {!jewelleryOnly && <div className="booking-measurements field-full"><strong>Customer measurements <span>(optional · inches)</span></strong><div><Field label="Chest"><input name="chest" type="number" min="0" step="0.1" defaultValue={booking?.chest || ""} placeholder="Chest size" /></Field><Field label="Back"><input name="back" type="number" min="0" step="0.1" defaultValue={booking?.back || ""} placeholder="Back size" /></Field><Field label="Hip"><input name="hip" type="number" min="0" step="0.1" defaultValue={booking?.hip || ""} placeholder="Hip size" /></Field></div></div>}
     <Field label="Delivery date *"><input type="date" name="delivery" min={booking ? undefined : today} value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} required /></Field>
     <Field label="Expected return date *"><input type="date" name="returnDate" min={deliveryDate || (booking ? undefined : today)} defaultValue={booking?.returnDate || ""} required /></Field>
     <Field label="Agreed rental price (PKR) *"><input type="number" name="amount" min="1" placeholder="Enter rental price" value={amount} onChange={(event) => setAmount(event.target.value)} required />
