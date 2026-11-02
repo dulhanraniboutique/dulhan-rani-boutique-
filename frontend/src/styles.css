@@ -413,6 +413,9 @@ tbody tr:hover { background: #fdfbfc; }
 .booking-article-search input::placeholder { color: #b0a5aa; }
 .booking-article-options { display: grid; max-height: 235px; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; overflow-y: auto; }
 .booking-article-empty { grid-column: 1/-1; margin: 0; padding: 12px; color: #988b91; font-size: 8px; text-align: center; }
+.booking-jewellery-section { display: flex; flex-direction: column; gap: 9px; padding-top: 12px; border-top: 1px solid #eadfe5; }
+.booking-jewellery-section > strong { color: #59424f; font-size: 9px; }
+.booking-jewellery-section > strong span { display: block; margin-top: 4px; color: #988b91; font-size: 8px; font-weight: 400; }
 .booking-selected-count { margin: 0; color: #75405d; font-size: 8px; font-weight: 700; }
 .booking-article-option { display: flex; min-width: 0; align-items: center; gap: 7px; padding: 7px; border: 1px solid #eee8eb; border-radius: 5px; background: #fff; cursor: pointer; }
 .booking-article-option.selected { border-color: #cdaebe; background: #fdf8fb; }
