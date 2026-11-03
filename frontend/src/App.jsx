@@ -12,7 +12,7 @@ import AccessScreen from "./AccessScreen.jsx";
 import PhotoUpload from "./PhotoUpload.jsx";
 import { DateInput, Field } from "./shared.jsx";
 import {
-  createStaff, deleteStaff, loadAuthProfiles, loadManagedProfiles, restoreSession, saveProfile,
+  createStaff, deleteStaff, loadAuthProfiles, loadManagedProfiles, permanentlyDeleteStaff, restoreSession, restoreStaff, saveProfile,
   setupAdmin, signIn, signOut as requestSignOut, updateAdminPin, validPin,
 } from "./auth.js";
 import {
@@ -433,6 +433,7 @@ function RecentlyDeletedPage({ records, onRestore, onPermanentlyDelete }) {
     if (entry.recordType === "article") return `${record.id} · ${record.name || "Article"}`;
     if (entry.recordType === "booking") return `${record.id} · ${record.customer || "Booking"}`;
     if (entry.recordType === "sale") return `${record.id} · ${record.customer || "Sale"}`;
+    if (entry.recordType === "staff") return `${record.name || "Staff profile"} · ${record.title || "Salesperson"}`;
     return record.id || "Record";
   };
   return <>
@@ -1338,13 +1339,24 @@ export default function App() {
       expiresAt: new Date(deletedAt.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
     }, ...current]);
   };
-  const handleDeletedRecordRestore = (entry) => {
+  const handleDeletedRecordRestore = async (entry) => {
     if (Date.parse(entry.expiresAt) <= Date.now()) {
       setDeletedRecords((current) => current.filter((item) => item.id !== entry.id));
       notify("This record has expired and can no longer be restored.");
       return;
     }
     const record = entry.record;
+    if (entry.recordType === "staff") {
+      try {
+        const restoredProfile = await restoreStaff(record.id);
+        setSalespeople((current) => [restoredProfile, ...current.filter((person) => person.id !== restoredProfile.id)]);
+        setDeletedRecords((current) => current.filter((item) => item.id !== entry.id));
+        notify(`${record.name} restored successfully.`);
+      } catch (error) {
+        notify(error.message || "Could not restore this salesperson profile.");
+      }
+      return;
+    }
     if (entry.recordType === "article") {
       if (articles.some((item) => item.id === record.id)) {
         notify(`Cannot restore ${record.id}: an article with that number already exists.`);
@@ -1381,10 +1393,18 @@ export default function App() {
     setDeletedRecords((current) => current.filter((item) => item.id !== entry.id));
     notify(`${record.id} restored successfully.`);
   };
-  const handleDeletedRecordPurge = (entry) => {
+  const handleDeletedRecordPurge = async (entry) => {
     if (!window.confirm(`Permanently delete ${entry.record?.id || "this record"}? This cannot be undone.`)) return;
-    setDeletedRecords((current) => current.filter((item) => item.id !== entry.id));
-    notify(`${entry.record?.id || "Record"} permanently deleted.`);
+    try {
+      if (entry.recordType === "staff") {
+        await permanentlyDeleteStaff(entry.record.id);
+        setSalespeople((current) => current.filter((person) => person.id !== entry.record.id));
+      }
+      setDeletedRecords((current) => current.filter((item) => item.id !== entry.id));
+      notify(`${entry.record?.name || entry.record?.id || "Record"} permanently deleted.`);
+    } catch (error) {
+      notify(error.message || "Could not permanently delete this record.");
+    }
   };
   const handleSignIn = async (selected, pin) => {
     const newSession = await signIn(selected.role === "admin" ? "admin" : selected.id, pin);
@@ -1442,13 +1462,14 @@ export default function App() {
     notify(id ? "Salesperson profile updated." : "Salesperson profile created.");
   };
   const handleStaffDelete = async (person) => {
-    if (!window.confirm(`Remove ${person.name}'s profile? They will no longer be able to sign in.`)) return;
+    if (!window.confirm(`Move ${person.name}'s profile to Recently deleted? It can be restored for three days.`)) return;
     try {
-      await deleteStaff(person.id);
+      const { deletedRecord } = await deleteStaff(person.id);
+      setDeletedRecords((current) => [deletedRecord, ...current.filter((item) => item.id !== deletedRecord.id)]);
       setSalespeople(salespeople.filter((item) => item.id !== person.id));
       if (session?.id === person.id) signOut();
       setModal(null);
-      notify("Salesperson profile removed.");
+      notify("Salesperson profile moved to Recently deleted.");
     } catch (error) {
       notify(error.message || "Could not remove this profile.");
     }

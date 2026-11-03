@@ -323,7 +323,7 @@ app.get("/api/auth/profiles", async (_request, response, next) => {
 app.get("/api/auth/profiles/manage", requireAuth, requireAdmin, async (_request, response, next) => {
   try {
     const accounts = await (await getDatabase()).collection("accounts")
-      .find({ role: { $in: ["admin", "sales"] } })
+      .find({ role: { $in: ["admin", "sales"] }, deletedAt: { $exists: false } })
       .project({ pinSalt: 0, pinHash: 0, failedAttempts: 0, lockedUntil: 0 })
       .toArray();
     response.json({
@@ -738,8 +738,97 @@ app.delete("/api/auth/profiles/:id", requireAuth, requireAdmin, async (request, 
       return;
     }
     const db = await getDatabase();
-    await db.collection("accounts").deleteOne({ _id: request.params.id, role: "sales" });
+    const accounts = db.collection("accounts");
+    const account = await accounts.findOne({ _id: request.params.id, role: "sales", deletedAt: { $exists: false } });
+    if (!account) {
+      response.status(404).json({ error: "Active salesperson profile not found." });
+      return;
+    }
+    const deletedAt = new Date();
+    const expiresAt = new Date(deletedAt.getTime() + 3 * 24 * 60 * 60 * 1000);
+    const deletedRecordId = `STAFF-${request.params.id}`;
+    const deletedRecord = {
+      _id: deletedRecordId,
+      id: deletedRecordId,
+      recordType: "staff",
+      record: publicProfile({ ...account, active: false }),
+      relatedRecords: {},
+      deletedAt,
+      expiresAt,
+    };
+    const updated = await accounts.updateOne(
+      { _id: account._id },
+      { $set: { active: false, deletedAt, deletedRecordId } },
+    );
+    if (!updated.matchedCount) {
+      response.status(404).json({ error: "Active salesperson profile not found." });
+      return;
+    }
+    try {
+      await db.collection("deletedRecords").replaceOne({ _id: deletedRecordId }, deletedRecord, { upsert: true });
+    } catch (error) {
+      await accounts.updateOne(
+        { _id: account._id, deletedRecordId },
+        { $set: { active: account.active !== false }, $unset: { deletedAt: "", deletedRecordId: "" } },
+      );
+      throw error;
+    }
     await db.collection("sessions").deleteMany({ accountId: request.params.id });
+    response.json({ status: "ok", deletedRecord: { ...deletedRecord, _id: undefined, deletedAt: deletedAt.toISOString(), expiresAt: expiresAt.toISOString() } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/auth/profiles/:id/restore", requireAuth, requireAdmin, async (request, response, next) => {
+  try {
+    const db = await getDatabase();
+    const accounts = db.collection("accounts");
+    const account = await accounts.findOne({
+      _id: request.params.id,
+      role: "sales",
+      deletedAt: { $gt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) },
+    });
+    if (!account) {
+      response.status(404).json({ error: "The deleted salesperson profile has expired or no longer exists." });
+      return;
+    }
+    const deletedRecord = await db.collection("deletedRecords").findOne({
+      _id: account.deletedRecordId,
+      expiresAt: { $gt: new Date() },
+    });
+    if (!deletedRecord) {
+      response.status(404).json({ error: "The deleted salesperson profile has expired or no longer exists." });
+      return;
+    }
+    if (await accounts.countDocuments({ role: "sales", active: { $ne: false }, deletedAt: { $exists: false } }) >= 6) {
+      response.status(409).json({ error: "A maximum of six active salesperson profiles is allowed. Deactivate another profile before restoring this one." });
+      return;
+    }
+    await accounts.updateOne({ _id: account._id }, { $set: { active: true }, $unset: { deletedAt: "", deletedRecordId: "" } });
+    await db.collection("deletedRecords").deleteOne({ _id: deletedRecord._id });
+    const restored = await accounts.findOne(
+      { _id: account._id },
+      { projection: { pinSalt: 0, pinHash: 0, failedAttempts: 0, lockedUntil: 0 } },
+    );
+    response.json({ profile: publicProfile(restored) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/auth/profiles/:id/permanent", requireAuth, requireAdmin, async (request, response, next) => {
+  try {
+    const db = await getDatabase();
+    const accounts = db.collection("accounts");
+    const account = await accounts.findOne({ _id: request.params.id, role: "sales", deletedAt: { $exists: true } });
+    if (!account) {
+      response.status(404).json({ error: "Deleted salesperson profile not found." });
+      return;
+    }
+    await accounts.deleteOne({ _id: account._id });
+    await db.collection("deletedRecords").deleteOne({ _id: account.deletedRecordId });
+    await db.collection("sessions").deleteMany({ accountId: account._id });
     response.json({ status: "ok" });
   } catch (error) {
     next(error);
@@ -873,6 +962,7 @@ app.use((error, _request, response, _next) => {
 async function start() {
   const database = await getDatabase();
   await database.collection("deletedRecords").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+  await database.collection("accounts").createIndex({ deletedAt: 1 }, { expireAfterSeconds: 3 * 24 * 60 * 60 });
   app.listen(port, () => {
     console.log(`DRB API listening on http://localhost:${port}`);
   });

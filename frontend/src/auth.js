@@ -99,7 +99,16 @@ export async function createStaff(details) {
 }
 
 export async function deleteStaff(id) {
-  await request(`/api/auth/profiles/${encodeURIComponent(id)}`, { method: "DELETE" }, true);
+  return request(`/api/auth/profiles/${encodeURIComponent(id)}`, { method: "DELETE" }, true);
+}
+
+export async function restoreStaff(id) {
+  const result = await request(`/api/auth/profiles/${encodeURIComponent(id)}/restore`, { method: "POST" }, true);
+  return result.profile;
+}
+
+export async function permanentlyDeleteStaff(id) {
+  await request(`/api/auth/profiles/${encodeURIComponent(id)}/permanent`, { method: "DELETE" }, true);
 }
 
 export async function updateAdminPin(currentPin, newPin) {
