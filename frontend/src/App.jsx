@@ -9,7 +9,7 @@ import {
 import { seedArticles, seedBookings, seedCustomers, seedPayments } from "./data.js";
 import AccessScreen from "./AccessScreen.jsx";
 import PhotoUpload from "./PhotoUpload.jsx";
-import { Field } from "./shared.jsx";
+import { DateInput, Field } from "./shared.jsx";
 import {
   createStaff, deleteStaff, loadAuthProfiles, loadManagedProfiles, restoreSession, saveProfile,
   setupAdmin, signIn, signOut as requestSignOut, updateAdminPin, validPin,
@@ -346,7 +346,7 @@ function BookingsPage({ bookings, articles, query, onQueryChange, onNew, onView,
     <div className="toolbar"><div className="toolbar-search"><Search size={16} /><input placeholder="Search booking, customer or article..." value={query} onChange={(event) => onQueryChange(event.target.value)} /></div>
       <div className="toolbar-controls"><select value={filter} onChange={(event) => setFilter(event.target.value)}><option>All bookings</option><option>Confirmed</option><option>Out</option><option>Returned</option></select>
         <Button variant="outline" icon={Download} onClick={() => window.print()}>Export</Button></div></div>
-    <section className="booking-date-filter-panel"><div><strong>Filter bookings by delivery date</strong><span>Select a date to show its bookings and the following day.</span></div><label><CalendarDays size={16} /><input aria-label="Filter bookings from selected delivery date through next day" lang="en-GB" type="date" value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} /></label>{deliveryDate && <><span className="booking-date-range">Showing {readableDate(deliveryDate)} – {readableDate(dateAfter(deliveryDate, 1))}</span><Button variant="outline" onClick={() => setDeliveryDate("")}>Clear date</Button></>}</section>
+    <section className="booking-date-filter-panel"><div><strong>Filter bookings by delivery date</strong><span>Select a date to show its bookings and the following day.</span></div><label><CalendarDays size={16} /><DateInput ariaLabel="Filter bookings from selected delivery date through next day" value={deliveryDate} onChange={setDeliveryDate} /></label>{deliveryDate && <><span className="booking-date-range">Showing {readableDate(deliveryDate)} – {readableDate(dateAfter(deliveryDate, 1))}</span><Button variant="outline" onClick={() => setDeliveryDate("")}>Clear date</Button></>}</section>
     <section className="panel table-panel"><div className="table-scroll"><table><thead><tr><th>BOOKING DATE</th><th>BOOKING ID</th><th>CUSTOMER</th><th>BILL</th><th>ARTICLES</th><th>DELIVERY</th><th>RETURN</th><th>CREATED BY</th><th>AMOUNT / DUE</th><th>STATUS</th><th></th></tr></thead>
       <tbody>{filtered.map((booking) => <tr key={booking.id} onClick={() => onView(booking)} className="clickable-row">
         <td>{readableDate(booking.bookingDate)}</td><td className="strong-cell">{booking.id}</td><td><strong>{booking.customer}</strong><small className="sub-cell">{booking.phone}</small></td>
@@ -443,7 +443,7 @@ function PaymentsPage({ payments, bookings, query, onQueryChange, onAdd, isAdmin
         {filtered.map((payment) => <tr key={payment.id}><td className="strong-cell">{payment.id}</td><td>{payment.booking}</td><td>{payment.customer}</td><td>{readableDate(payment.date)}</td><td><span className="payment-method"><CircleDollarSign size={15} />{payment.method}</span></td><td>{payment.receivedBy}</td><td className="money-cell">{currency(payment.amount)}</td></tr>)}
       </tbody></table>{filtered.length === 0 && <EmptyState title="No payments found" detail="Recorded payments will appear here." />}</div></section>
     <section className="panel due-panel"><div className="due-panel-icon"><AlertTriangle size={18} /></div><div><strong>Balances to follow up</strong><span>There are {visibleBookings.filter((b) => b.amount > b.paid && !["Returned", "Cancelled"].includes(b.status)).length} active bookings with remaining payments.</span></div><strong>{currency(due)}</strong></section>
-    {isAdmin && <section className="panel staff-cash-panel"><div className="panel-heading table-title"><div><h2>Staff collection summary</h2><p>Compare lifetime activity with bookings and payments for the selected day.</p></div><label><span>Day-end date</span><input aria-label="Staff summary date" lang="en-GB" type="date" value={reportDate} onChange={(event) => setReportDate(event.target.value)} /></label></div>
+    {isAdmin && <section className="panel staff-cash-panel"><div className="panel-heading table-title"><div><h2>Staff collection summary</h2><p>Compare lifetime activity with bookings and payments for the selected day.</p></div><label><span>Day-end date</span><DateInput ariaLabel="Staff summary date" value={reportDate} onChange={setReportDate} /></label></div>
       <div className="staff-cash-total"><span>Total received on {readableDate(reportDate)}</span><strong>{currency(dailyTotal)}</strong><small>{dailyPayments.length} payment{dailyPayments.length === 1 ? "" : "s"} · {dailyBookings.length} booking{dailyBookings.length === 1 ? "" : "s"} created</small></div>
       <div className="table-scroll"><table><thead><tr><th>TEAM MEMBER</th><th>ALL BOOKINGS</th><th>BOOKINGS THIS DAY</th><th>PAYMENTS THIS DAY</th><th>COLLECTED ALL TIME</th><th>COLLECTED THIS DAY</th></tr></thead><tbody>
         {staff.map((person) => {
@@ -513,11 +513,10 @@ function TomorrowDeliveriesPage({ bookings, articles, dateRange, onRangeChange, 
   return <>
     <PageHeader eyebrow="RENTAL OPERATIONS" title="Delivery prep" description="Choose any upcoming delivery range and prepare every dress with its photo, measurements and instructions." />
     <div className="panel prep-range">
-      <label><span>From date</span><input aria-label="From date" lang="en-GB" type="date" min={today} value={dateRange.from} onChange={(event) => {
-        const from = event.target.value;
+      <label><span>From date</span><DateInput ariaLabel="From date" min={today} value={dateRange.from} onChange={(from) => {
         onRangeChange({ from, to: dateRange.to < from ? from : dateRange.to });
       }} /></label>
-      <label><span>To date</span><input aria-label="To date" lang="en-GB" type="date" min={dateRange.from} value={dateRange.to} onChange={(event) => onRangeChange({ ...dateRange, to: event.target.value })} /></label>
+      <label><span>To date</span><DateInput ariaLabel="To date" min={dateRange.from} value={dateRange.to} onChange={(to) => onRangeChange({ ...dateRange, to })} /></label>
       <span className="prep-range-hint">Choose any upcoming date range.</span>
     </div>
     <div className="prep-summary">
@@ -1519,6 +1518,7 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
   const [customerError, setCustomerError] = useState("");
   const [amount, setAmount] = useState(booking ? String(booking.amount ?? "") : "");
   const [paid, setPaid] = useState(booking ? String(booking.paid ?? "") : "");
+  const [returnDate, setReturnDate] = useState(booking?.returnDate || "");
   useEffect(() => {
     if (!addedArticleId || selectedArticleIds.includes(addedArticleId)) return;
     const updatedIds = [...selectedArticleIds, addedArticleId];
@@ -1581,10 +1581,10 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
         <button className="button button-outline inline-save-customer" type="button" onClick={createCustomer}><Check size={13} />Save & select customer</button>
       </div>}
     </div>
-    <Field label="Booking date"><input lang="en-GB" type="date" value={booking?.bookingDate || today} readOnly /></Field>
+    <Field label="Booking date"><DateInput value={booking?.bookingDate || today} readOnly /></Field>
     {!hideMeasurements && <div className="booking-measurements field-full"><strong>Customer measurements <span>(optional · inches)</span></strong><div><Field label="Chest"><input name="chest" type="number" min="0" step="0.1" defaultValue={booking?.chest || ""} placeholder="Chest size" /></Field><Field label="Back"><input name="back" type="number" min="0" step="0.1" defaultValue={booking?.back || ""} placeholder="Back size" /></Field><Field label="Hip"><input name="hip" type="number" min="0" step="0.1" defaultValue={booking?.hip || ""} placeholder="Hip size" /></Field></div></div>}
-    <Field label="Delivery date *"><input lang="en-GB" type="date" name="delivery" min={booking ? undefined : today} value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} required /></Field>
-    <Field label="Expected return date *"><input lang="en-GB" type="date" name="returnDate" min={deliveryDate || (booking ? undefined : today)} defaultValue={booking?.returnDate || ""} required /></Field>
+    <Field label="Delivery date *"><DateInput name="delivery" ariaLabel="Delivery date" min={booking ? undefined : today} value={deliveryDate} onChange={setDeliveryDate} required /></Field>
+    <Field label="Expected return date *"><DateInput name="returnDate" ariaLabel="Expected return date" min={deliveryDate || (booking ? undefined : today)} value={returnDate} onChange={setReturnDate} required /></Field>
     <Field label="Agreed rental price (PKR) *"><input type="number" name="amount" min="1" placeholder="Enter rental price" value={amount} onChange={(event) => setAmount(event.target.value)} required />
       {selectedArticles.length > 0 && <small className="suggested-price">Suggested total for {selectedArticles.length} article{selectedArticles.length === 1 ? "" : "s"}: {currency(selectedArticles.reduce((sum, item) => sum + item.price, 0))}</small>}</Field>
     <Field label={booking ? "Advance received (PKR)" : "Advance payment (PKR)"}><input type="number" name="paid" min="0" value={paid} onChange={(event) => setPaid(event.target.value)} readOnly={Boolean(booking)} />{booking && <small className="suggested-price">Payments are managed from the Payments page.</small>}</Field>
@@ -1597,10 +1597,11 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
 }
 
 function SaleForm({ onSubmit, onCancel }) {
+  const [date, setDate] = useState(today);
   const [amount, setAmount] = useState("");
   const [paid, setPaid] = useState("");
   return <form className="form-grid sale-form" onSubmit={onSubmit}>
-    <Field label="Sale date *"><input lang="en-GB" type="date" name="date" defaultValue={today} required /></Field>
+    <Field label="Sale date *"><DateInput name="date" ariaLabel="Sale date" value={date} onChange={setDate} required /></Field>
     <Field label="Customer name *"><input name="customer" placeholder="Customer name" required /></Field>
     <Field label="Phone number"><input name="phone" type="tel" placeholder="Optional" /></Field>
     <Field label="Item / sale details *" className="field-full"><input name="itemDescription" placeholder="Describe the item or sale" required /></Field>
