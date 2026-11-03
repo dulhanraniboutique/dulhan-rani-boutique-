@@ -1158,7 +1158,7 @@ export default function App() {
     const customer = customers.find((item) => item.id === form.get("customer"));
     const existing = editingBookingId ? bookings.find((item) => item.id === editingBookingId) : null;
     if (editingBookingId && role !== "admin") { notify("Only an administrator can edit bookings."); return; }
-    if (!selectedArticles.length || selectedArticles.length !== selectedIds.length || !customer || (editingBookingId && !existing)) { notify("Choose a customer and at least one valid article."); return; }
+    if (selectedArticles.length !== selectedIds.length || !customer || (editingBookingId && !existing)) { notify("Choose a customer and make sure selected articles are valid."); return; }
     const delivery = form.get("delivery"), returnDate = form.get("returnDate");
     if (returnDate < delivery) {
       notify("Check the booking dates: return date must be on or after delivery.");
@@ -1229,7 +1229,8 @@ export default function App() {
       receivedBy: currentProfile.name,
       receivedById: currentUserId,
     }, ...payments]);
-    setModal(null); notify(`Booking ${nextBooking.id} created successfully.`);
+    setModal({ type: "booking-detail", booking: nextBooking }, { replace: true });
+    notify(`Booking ${nextBooking.id} created successfully.`);
   };
   const handleBookingDelete = (booking) => {
     if (role !== "admin") { notify("Only an administrator can delete bookings."); return; }
@@ -1491,7 +1492,7 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
     setShowNewCustomer(false);
   };
   return <form className="form-grid" onSubmit={(event) => onSubmit(event, booking?.id || null)}>
-    <div className="booking-article-picker field-full"><strong>Select articles * <span>Choose one or more items. Jewellery sets can be booked separately or with an outfit.</span></strong>
+    <div className="booking-article-picker field-full"><strong>Select articles <span>Optional — choose items if needed, or create a booking without an article. Jewellery sets can be booked alone or with an outfit.</span></strong>
       <Field label="Category"><select aria-label="Filter articles by category" value={articleCategory} onChange={(event) => setArticleCategory(event.target.value)}><option>All categories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select></Field>
       <label className="booking-article-search"><Search size={15} /><input type="search" aria-label="Search articles for booking" placeholder="Type article name or number..." value={articleSearch} onChange={(event) => setArticleSearch(event.target.value)} /></label>
       <div className="booking-article-options">{matchingArticles.map((article) => <BookingArticleOption key={article.id} article={article} selected={selectedArticleIds.includes(article.id)} onToggle={toggleArticle} />)}
