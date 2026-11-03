@@ -109,16 +109,16 @@ const readableDate = (value) => value
 const navGroups = [
   { label: "WORKSPACE", items: [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { id: "articles", label: "Articles", icon: Shirt, badge: "6" },
     { id: "bookings", label: "Bookings", icon: CalendarDays, badge: "bookings" },
+    { id: "tomorrow", label: "Delivery prep", icon: Truck },
+    { id: "payments", label: "Payments", icon: Wallet },
+    { id: "articles", label: "Articles", icon: Shirt, badge: "6" },
     { id: "sales", label: "Sales", icon: ShoppingCart },
     { id: "jewellery-bookings", label: "Jewellery Set Booking", icon: Gem },
     { id: "customers", label: "Customers", icon: Users },
   ] },
   { label: "OPERATIONS", items: [
-    { id: "payments", label: "Payments", icon: Wallet },
     { id: "returns", label: "Returns & tracking", icon: RotateCcw },
-    { id: "tomorrow", label: "Delivery prep", icon: Truck },
     { id: "calendar", label: "Calendar", icon: CalendarDays },
   ] },
   { label: "MANAGEMENT", adminOnly: true, items: [
@@ -250,13 +250,12 @@ function Dashboard({ articles, bookings, payments, role, profile, onNavigate }) 
     .reduce((sum, payment) => sum + Number(payment.amount || 0), 0));
   const highestRevenue = Math.max(...monthlyRevenue);
   const maintenanceCount = articles.filter((item) => item.status === "Maintenance").length;
-  return <div className="delivery-prep-page">
+  return <>
     <PageHeader eyebrow={`${role === "admin" ? "ADMINISTRATOR" : "SALESPERSON"} OVERVIEW`} title={`Good morning, ${profile.name.split(" ")[0]} ✨`}
       description="Here’s what’s happening at your boutique today." action actionLabel="Create booking" actionIcon={Plus} onAction={() => onNavigate("new-booking")} actionClassName="dashboard-create-booking" />
     <div className="welcome-strip">
       <div className="welcome-icon"><Sparkles size={21} /></div>
       <div><strong>Your boutique at a glance</strong><span>Stay on top of today’s fittings, deliveries and returns.</span></div>
-      <Button className="welcome-create-booking" icon={Plus} onClick={() => onNavigate("new-booking")}>Create booking</Button>
       <button onClick={() => onNavigate("calendar")}>View calendar <ChevronRight size={16} /></button>
       <span className="strip-decoration">✦</span>
     </div>
@@ -302,7 +301,7 @@ function Dashboard({ articles, bookings, payments, role, profile, onNavigate }) 
         <div className="stock-note"><AlertTriangle size={15} /><span>{maintenanceCount ? `${maintenanceCount} article${maintenanceCount === 1 ? "" : "s"} need attention before the next booking.` : "No articles currently need attention."}</span></div>
       </section>
     </div>
-  </div>;
+  </>;
 }
 
 function StatCard({ label, value, note, icon: Icon, tone, trend, onTrendClick }) {
@@ -496,13 +495,12 @@ function ReturnsPage({ bookings, onReturn, onStatusChange, onRecordPayment }) {
     <div className="return-alert"><div className="alert-icon"><Clock3 size={20} /></div><div><strong>{out.length} items currently with customers</strong><span>Check expected return dates and prepare upcoming reservations.</span></div><button onClick={() => document.getElementById("returns-list")?.scrollIntoView({ behavior: "smooth" })}>View items <ChevronRight size={16} /></button></div>
     <div className="booking-stats"><MiniMetric label="Currently rented" value={out.length} tone="orange" /><MiniMetric label="Due today" value={out.filter((booking) => booking.returnDate === today).length} tone="plum" /><MiniMetric label="Upcoming deliveries" value={active.filter((booking) => booking.delivery >= today).length} tone="green" /><MiniMetric label="Overdue" value={out.filter((booking) => booking.returnDate < today).length} /></div>
     <section className="panel table-panel" id="returns-list"><div className="panel-heading table-title"><div><h2>Rental tracking</h2><p>Confirm returns as soon as the article is received and checked.</p></div></div>
-      <div className="table-scroll"><table><thead><tr><th>BOOKING</th><th>ARTICLE</th><th>CUSTOMER</th><th>DELIVERY DATE</th><th>EXPECTED RETURN</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>
-        {active.map((booking) => <tr key={booking.id}><td className="strong-cell">{booking.id}</td><td><strong>{bookingArticleTitles(booking)}</strong><small className="sub-cell">{bookingArticleLabels(booking)}</small></td><td>{booking.customer}<small className="sub-cell">{booking.phone}</small></td><td>{readableDate(booking.delivery)}</td><td>{readableDate(booking.returnDate)}</td><td><Status>{booking.status === "Out" ? booking.returnDate < today ? "Overdue" : "With customer" : "Upcoming"}</Status></td>
-          <td>{booking.status === "Out"
+      <div className="table-scroll"><table><thead><tr><th>ACTION</th><th>BOOKING</th><th>ARTICLE</th><th>CUSTOMER</th><th>DELIVERY DATE</th><th>EXPECTED RETURN</th><th>STATUS</th></tr></thead><tbody>
+        {active.map((booking) => <tr key={booking.id}><td>{booking.status === "Out"
             ? <Button variant="small" icon={Check} onClick={() => onReturn(booking.id)}>Confirm return</Button>
             : booking.amount > booking.paid
               ? <Button variant="small" icon={Wallet} onClick={() => onRecordPayment(booking)}>Receive balance</Button>
-              : <Button variant="small" icon={Truck} onClick={() => onStatusChange(booking, "Out")}>Mark picked up</Button>}</td></tr>)}
+              : <Button variant="small" icon={Truck} onClick={() => onStatusChange(booking, "Out")}>Mark picked up</Button>}</td><td className="strong-cell">{booking.id}</td><td><strong>{bookingArticleTitles(booking)}</strong><small className="sub-cell">{bookingArticleLabels(booking)}</small></td><td>{booking.customer}<small className="sub-cell">{booking.phone}</small></td><td>{readableDate(booking.delivery)}</td><td>{readableDate(booking.returnDate)}</td><td><Status>{booking.status === "Out" ? booking.returnDate < today ? "Overdue" : "With customer" : "Upcoming"}</Status></td></tr>)}
       </tbody></table></div></section>
     <div className="return-tip"><Sparkles size={17} /><span><strong>Return checklist:</strong> inspect the article condition, record any damage, and confirm any remaining payment before marking it available.</span></div>
   </>;
@@ -544,7 +542,7 @@ function TomorrowDeliveriesPage({ bookings, articles, dateRange, onRangeChange, 
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  return <>
+  return <div className="delivery-prep-page">
     <PageHeader eyebrow="RENTAL OPERATIONS" title="Delivery prep" description="Choose any upcoming delivery range and prepare every dress with its photo, measurements and instructions." />
     <div className="panel prep-range">
       <label><span>From date</span><DateInput ariaLabel="From date" min={today} value={dateRange.from} onChange={(from) => {
@@ -580,7 +578,7 @@ function TomorrowDeliveriesPage({ bookings, articles, dateRange, onRangeChange, 
           <div><small>Special instructions</small><span>{booking.notes || "No special instructions"}</span></div>
         </div>
       </article>)}</div>}
-  </>;
+  </div>;
 }
 
 function CalendarPage({ bookings, articles, onNew, onView }) {
@@ -1696,8 +1694,9 @@ export default function App() {
     ? booking.createdById === currentUserId
     : (booking.createdBy || booking.staff) === currentProfile.name);
   const pendingApprovalCount = approvalRequests.filter((item) => item.status === "Pending").length;
-  const deliveryPrepCount = bookings.filter((booking) => booking.delivery >= today
-    && !["Out", "Returned", "Cancelled"].includes(booking.status)).length;
+  const deliveryPrepCount = bookings
+    .filter((booking) => booking.delivery === today && !["Out", "Returned", "Cancelled"].includes(booking.status))
+    .reduce((count, booking) => count + bookingArticleRecords(booking, articles).length, 0);
   const content = (() => {
     if (activePage === "approvals" && role === "admin") {
       return <ApprovalsPage requests={approvalRequests} error={approvalError} onReview={decideApproval} />;

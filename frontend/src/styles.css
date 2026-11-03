@@ -128,8 +128,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .welcome-strip strong { color: #573849; font-size: 11px; }
 .welcome-strip span:not(.strip-decoration) { color: #927e88; font-size: 10px; }
 .welcome-strip button { position: relative; z-index: 1; display: flex; align-items: center; gap: 4px; padding: 6px 0; border: 0; background: transparent; color: #753651; font-size: 10px; font-weight: 700; }
-.welcome-strip .welcome-create-booking.button { min-height: 44px; flex: 0 0 auto; gap: 8px; padding: 0 15px; border: 1px solid #713650; border-radius: 7px; background: #713650; box-shadow: 0 4px 12px #71365024; color: #fff; font-size: 13px; font-weight: 700; }
-.welcome-strip .welcome-create-booking.button:hover { background: #5d2943; }
 .strip-decoration { position: absolute; top: -18px; right: 80px; color: #e8d4de; font-size: 70px; }
 .stats-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 13px; margin-bottom: 15px; }
 .stat-card { min-width: 0; padding: 15px 15px 13px; border: 1px solid #eee9eb; border-radius: 9px; background: white; }
@@ -317,7 +315,7 @@ tbody tr:hover { background: #fdfbfc; }
 .prep-delivery-date { color: #71334f !important; font-weight: 700; }
 .prep-articles { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 0; }
 .prep-article { display: flex; min-width: 220px; align-items: center; gap: 9px; }
-.prep-article img,.prep-image-placeholder { width: 52px; height: 62px; flex: 0 0 52px; border-radius: 5px; background: #f6f0f3; object-fit: contain; }
+.prep-article img,.prep-image-placeholder { width: 100px; height: 126px; flex: 0 0 100px; border-radius: 7px; background: #f6f0f3; object-fit: contain; }
 .prep-image-placeholder { display: grid; place-items: center; color: #81506a; }
 .prep-article-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .prep-article strong { color: #514049; font-size: 10px; }
@@ -545,7 +543,7 @@ tbody tr:hover { background: #fdfbfc; }
 .detail-highlight { display: flex; align-items: center; gap: 11px; padding: 12px; border: 1px solid #f0dfe8; border-radius: 8px; background: #fcf3f7; }
 .detail-highlight > span { display: grid; width: 38px; height: 38px; flex: 0 0 38px; place-items: center; border-radius: 9px; background: #f3e2ea; color: #7a4560; }
 .detail-highlight > div { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 5px; }.detail-highlight strong { color: #533c49; font-size: 12px; }.detail-highlight small { display: flex; align-items: center; gap: 5px; color: #8d727f; font-size: 10px; }.detail-highlight small svg { flex: 0 0 13px; }
-.receipt-booking-status { flex: 0 0 auto; min-height: 27px; align-items: center; border: 1px solid #dfc3d0; padding: 5px 9px; font-size: 9px; }
+.receipt-booking-status { display: inline-flex; width: max-content; min-width: 96px; min-height: 34px; flex: 0 0 auto; align-items: center; justify-content: center; box-sizing: border-box; border: 1px solid #dfc3d0; padding: 6px 12px; font-size: 9px; line-height: 1.3; }
 .detail-lines { display: grid; grid-template-columns: repeat(2,1fr); gap: 0 15px; }
 .detail-lines > div { display: flex; flex-direction: column; gap: 4px; padding: 10px 0; border-bottom: 1px solid #f2edef; }
 .detail-lines span { color: #9b8e94; font-size: 8px; }.detail-lines strong { color: #59454f; font-size: 9px; }.detail-lines small { color: #9f9298; font-size: 8px; }
@@ -721,6 +719,8 @@ tbody tr:hover { background: #fdfbfc; }
   body.printing-delivery-prep .delivery-prep-page { display: block !important; }
   body.printing-delivery-prep .prep-range { display: none !important; }
   body.printing-delivery-prep .prep-list { display: grid !important; }
+  body.printing-delivery-prep .prep-article img,
+  body.printing-delivery-prep .prep-image-placeholder { width: 130px; height: 165px; flex-basis: 130px; }
   body.printing-receipt .app-shell > .sidebar,
   body.printing-receipt .app-shell > .main-area,
   body.printing-receipt .app-shell > .mobile-backdrop { display: none !important; }
@@ -913,7 +913,7 @@ tbody tr:hover { background: #fdfbfc; }
   #root .modal .modal-actions .button { min-height: 42px; font-size: 12px; }
 }
 
-.dashboard-create-booking { min-height: 48px; padding: 0 20px; font-size: 14px; font-weight: 700; }
+.dashboard-create-booking { min-height: 54px; padding: 0 24px; font-size: 15px; font-weight: 700; }
 .topbar-create-booking { min-height: 36px; padding: 0 12px; font-size: 11px; font-weight: 700; white-space: nowrap; }
 .booking-receipt-action { display: inline-flex; min-height: 34px; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid #e8dbe2; border-radius: 6px; background: #fcf8fa; color: #71334f; font-size: 11px; font-weight: 700; white-space: nowrap; }
 .booking-receipt-action:hover { border-color: #d7becb; background: #f5eaf0; }
@@ -930,7 +930,7 @@ tbody tr:hover { background: #fdfbfc; }
   .topbar-create-booking { width: 40px; min-width: 40px; height: 40px; padding: 0; border-radius: 8px; }
   .topbar-create-booking span { display: none; }
   .topbar-create-booking svg { width: 19px; height: 19px; }
-  .dashboard-create-booking { min-height: 44px; padding: 0 12px; font-size: 12px; }
+  .dashboard-create-booking { min-height: 46px; padding: 0 14px; font-size: 13px; }
   .booking-receipt-action { min-height: 38px; padding: 0 10px; font-size: 12px; }
   .sale-balance-summary { font-size: 14px; }
   .sale-balance-summary strong { font-size: 16px; }
@@ -960,10 +960,8 @@ tbody tr:hover { background: #fdfbfc; }
   .calendar-detail-row { align-items: flex-start; flex-wrap: wrap; }
   .calendar-detail-row .button { margin-left: 50px; }
   .welcome-strip { flex-wrap: wrap; }
-  .welcome-strip .welcome-create-booking.button { min-height: 42px; gap: 5px; padding: 0 9px; font-size: 12px; }
-  .welcome-strip .welcome-create-booking.button svg { width: 15px; height: 15px; }
-  .welcome-strip > button:not(.welcome-create-booking) { font-size: 0; }
-  .welcome-strip > button:not(.welcome-create-booking) svg { width: 17px; height: 17px; }
+  .welcome-strip > button { font-size: 0; }
+  .welcome-strip > button svg { width: 17px; height: 17px; }
 }
 .approval-section { display: flex; flex-direction: column; gap: 9px; margin-bottom: 20px; }
 .approval-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px; }
