@@ -861,3 +861,18 @@ tbody tr:hover { background: #fdfbfc; }
   #root .page-content :where(p,span,small,td,th,label) { font-weight: 500; }
   #root .page-content :where(.field > span,.settings-nav button,.settings-save > span,.sub-cell) { font-weight: 600; }
 }
+
+@media (max-width: 650px) {
+  #root .page-content { font-size: 15px; font-weight: 500; line-height: 1.55; }
+  #root .page-content :where(.page-description,.welcome-strip span:not(.strip-decoration),.stat-top,.stat-footer,.inventory-summary,.article-category,.article-meta,.article-card-footer,.mini-metric span:last-child,.customer-stat-row > div > span,.sub-cell,.finance-label,.finance-card > small,.due-panel > div:nth-child(2) span,.return-alert span,.return-tip,.prep-range-hint,.panel-heading p,.app-footer) { font-size: max(12px,.75em); line-height: 1.5; }
+  #root .page-content :where(.field > span,.settings-nav button,.settings-save > span,.sub-cell,.panel-heading h2,.mini-metric strong,.article-info h3,.settings-toggle-copy strong) { font-weight: 600; }
+  #root .page-content :where(.field input,.field select,.field textarea,.toolbar-search input,.toolbar-controls select) { min-height: 44px; font-size: 14px; }
+  #root .page-content .page-heading h1 { font-size: 26px; }
+  #root .page-content .page-heading > .button { min-height: 40px; font-size: 12px; }
+  #root .page-content .article-info h3 { font-size: 13px; }
+  #root .side-nav .nav-item span { font-size: 14px; font-weight: 600; }
+  #root .side-nav .nav-label { font-size: 11px; }
+  #root .modal :where(.modal-heading p,.field > span,.form-hint,.booking-article-picker > strong,.booking-article-picker > strong span,.booking-article-option b,.booking-article-option small,.inline-customer-heading,.inline-customer-grid input,.suggested-price) { font-size: max(12px,.75em); line-height: 1.5; }
+  #root .modal :where(.field input,.field select,.field textarea,.booking-article-search input) { min-height: 44px; font-size: 14px; }
+  #root .modal .modal-actions .button { min-height: 42px; font-size: 12px; }
+}

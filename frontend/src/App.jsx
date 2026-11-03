@@ -32,6 +32,18 @@ const categoriesForArticles = (articles) => [
   ...articleCategories,
   ...new Set(articles.map((article) => article.category).filter((category) => category && !articleCategories.includes(category))),
 ];
+const nextBridalArticleNumber = (articles) => {
+  const usedIds = new Set(articles.map((article) => article.id.toLowerCase()));
+  let number = articles.reduce((highest, article) => {
+    if (article.category !== "Bridal Wear" || !/^\d+$/.test(article.id)) return highest;
+    return Math.max(highest, Number(article.id));
+  }, 0);
+  let candidate;
+  do {
+    candidate = String(++number).padStart(3, "0");
+  } while (usedIds.has(candidate.toLowerCase()));
+  return candidate;
+};
 const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const bookingArticleIds = (booking) => booking.articles?.map((article) => typeof article === "string" ? article : article.id) || (booking.article ? [booking.article] : []);
 const bookingArticleNames = (booking) => booking.articles?.map((article) => typeof article === "string" ? article : article.name).filter(Boolean) || (booking.articleName ? [booking.articleName] : []);
@@ -333,7 +345,7 @@ function BookingsPage({ bookings, articles, query, onQueryChange, onNew, onView,
     <div className="toolbar"><div className="toolbar-search"><Search size={16} /><input placeholder="Search booking, customer or article..." value={query} onChange={(event) => onQueryChange(event.target.value)} /></div>
       <div className="toolbar-controls"><select value={filter} onChange={(event) => setFilter(event.target.value)}><option>All bookings</option><option>Confirmed</option><option>Out</option><option>Returned</option></select>
         <Button variant="outline" icon={Download} onClick={() => window.print()}>Export</Button></div></div>
-    <section className="booking-date-filter-panel"><div><strong>Filter bookings by delivery date</strong><span>Select a date to show its bookings and the following day.</span></div><label><CalendarDays size={16} /><input aria-label="Filter bookings from selected delivery date through next day" type="date" value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} /></label>{deliveryDate && <><span className="booking-date-range">Showing {readableDate(deliveryDate)} – {readableDate(dateAfter(deliveryDate, 1))}</span><Button variant="outline" onClick={() => setDeliveryDate("")}>Clear date</Button></>}</section>
+    <section className="booking-date-filter-panel"><div><strong>Filter bookings by delivery date</strong><span>Select a date to show its bookings and the following day.</span></div><label><CalendarDays size={16} /><input aria-label="Filter bookings from selected delivery date through next day" lang="en-GB" type="date" value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} /></label>{deliveryDate && <><span className="booking-date-range">Showing {readableDate(deliveryDate)} – {readableDate(dateAfter(deliveryDate, 1))}</span><Button variant="outline" onClick={() => setDeliveryDate("")}>Clear date</Button></>}</section>
     <section className="panel table-panel"><div className="table-scroll"><table><thead><tr><th>BOOKING DATE</th><th>BOOKING ID</th><th>CUSTOMER</th><th>ARTICLES</th><th>DELIVERY</th><th>RETURN</th><th>CREATED BY</th><th>AMOUNT / DUE</th><th>STATUS</th><th></th></tr></thead>
       <tbody>{filtered.map((booking) => <tr key={booking.id} onClick={() => onView(booking)} className="clickable-row">
         <td>{readableDate(booking.bookingDate)}</td><td className="strong-cell">{booking.id}</td><td><strong>{booking.customer}</strong><small className="sub-cell">{booking.phone}</small></td>
@@ -415,7 +427,7 @@ function PaymentsPage({ payments, bookings, query, onQueryChange, onAdd, isAdmin
         {filtered.map((payment) => <tr key={payment.id}><td className="strong-cell">{payment.id}</td><td>{payment.booking}</td><td>{payment.customer}</td><td>{readableDate(payment.date)}</td><td><span className="payment-method"><CircleDollarSign size={15} />{payment.method}</span></td><td>{payment.receivedBy}</td><td className="money-cell">{currency(payment.amount)}</td></tr>)}
       </tbody></table>{filtered.length === 0 && <EmptyState title="No payments found" detail="Recorded payments will appear here." />}</div></section>
     <section className="panel due-panel"><div className="due-panel-icon"><AlertTriangle size={18} /></div><div><strong>Balances to follow up</strong><span>There are {visibleBookings.filter((b) => b.amount > b.paid && !["Returned", "Cancelled"].includes(b.status)).length} active bookings with remaining payments.</span></div><strong>{currency(due)}</strong></section>
-    {isAdmin && <section className="panel staff-cash-panel"><div className="panel-heading table-title"><div><h2>Staff collection summary</h2><p>Compare lifetime activity with bookings and payments for the selected day.</p></div><label><span>Day-end date</span><input aria-label="Staff summary date" type="date" value={reportDate} onChange={(event) => setReportDate(event.target.value)} /></label></div>
+    {isAdmin && <section className="panel staff-cash-panel"><div className="panel-heading table-title"><div><h2>Staff collection summary</h2><p>Compare lifetime activity with bookings and payments for the selected day.</p></div><label><span>Day-end date</span><input aria-label="Staff summary date" lang="en-GB" type="date" value={reportDate} onChange={(event) => setReportDate(event.target.value)} /></label></div>
       <div className="staff-cash-total"><span>Total received on {readableDate(reportDate)}</span><strong>{currency(dailyTotal)}</strong><small>{dailyPayments.length} payment{dailyPayments.length === 1 ? "" : "s"} · {dailyBookings.length} booking{dailyBookings.length === 1 ? "" : "s"} created</small></div>
       <div className="table-scroll"><table><thead><tr><th>TEAM MEMBER</th><th>ALL BOOKINGS</th><th>BOOKINGS THIS DAY</th><th>PAYMENTS THIS DAY</th><th>COLLECTED ALL TIME</th><th>COLLECTED THIS DAY</th></tr></thead><tbody>
         {staff.map((person) => {
@@ -485,11 +497,11 @@ function TomorrowDeliveriesPage({ bookings, articles, dateRange, onRangeChange, 
   return <>
     <PageHeader eyebrow="RENTAL OPERATIONS" title="Delivery prep" description="Choose any upcoming delivery range and prepare every dress with its photo, measurements and instructions." />
     <div className="panel prep-range">
-      <label><span>From date</span><input aria-label="From date" type="date" min={today} value={dateRange.from} onChange={(event) => {
+      <label><span>From date</span><input aria-label="From date" lang="en-GB" type="date" min={today} value={dateRange.from} onChange={(event) => {
         const from = event.target.value;
         onRangeChange({ from, to: dateRange.to < from ? from : dateRange.to });
       }} /></label>
-      <label><span>To date</span><input aria-label="To date" type="date" min={dateRange.from} value={dateRange.to} onChange={(event) => onRangeChange({ ...dateRange, to: event.target.value })} /></label>
+      <label><span>To date</span><input aria-label="To date" lang="en-GB" type="date" min={dateRange.from} value={dateRange.to} onChange={(event) => onRangeChange({ ...dateRange, to: event.target.value })} /></label>
       <span className="prep-range-hint">Choose any upcoming date range.</span>
     </div>
     <div className="prep-summary">
@@ -855,12 +867,67 @@ export default function App() {
   const [prepDateRange, setPrepDateRange] = useState(() => ({ from: today, to: dateAfter(today, 1) }));
   const [bootStage, setBootStage] = useState("splash");
   const [query, setQuery] = useState("");
-  const [modal, setModal] = useState(null);
+  const [modal, setModalState] = useState(null);
+  const activePageRef = useRef(activePage);
+  const modalRef = useRef(modal);
+  const modalHistoryRef = useRef(new Map());
+  const activeModalHistoryIdRef = useRef(null);
+  const modalHistoryCounterRef = useRef(0);
+  activePageRef.current = activePage;
+  modalRef.current = modal;
+  const setModal = (next, { replace = false } = {}) => {
+    const resolved = typeof next === "function" ? next(modalRef.current) : next;
+    if (!resolved) {
+      if (modalRef.current && window.history.state?.drbApp && window.history.state.modalId) {
+        window.history.back();
+      } else {
+        if (activeModalHistoryIdRef.current) modalHistoryRef.current.delete(activeModalHistoryIdRef.current);
+        activeModalHistoryIdRef.current = null;
+        setModalState(null);
+      }
+      return;
+    }
+    const modalId = `modal-${++modalHistoryCounterRef.current}`;
+    modalHistoryRef.current.set(modalId, resolved);
+    activeModalHistoryIdRef.current = modalId;
+    const state = { drbApp: true, page: activePageRef.current, modalId };
+    if (replace) window.history.replaceState(state, "");
+    else window.history.pushState(state, "");
+    setModalState(resolved);
+  };
   const [quickCreatedArticleId, setQuickCreatedArticleId] = useState("");
   const [toast, setToast] = useState("");
   const toastTimer = useRef(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  useEffect(() => {
+    if (!session) return undefined;
+    modalHistoryRef.current.clear();
+    activeModalHistoryIdRef.current = null;
+    const appState = { drbApp: true, page: activePageRef.current, modalId: null };
+    window.history.replaceState(appState, "");
+    const handlePopState = (event) => {
+      const state = event.state;
+      if (state?.drbApp) {
+        if (activeModalHistoryIdRef.current && activeModalHistoryIdRef.current !== state.modalId) {
+          modalHistoryRef.current.delete(activeModalHistoryIdRef.current);
+        }
+        activeModalHistoryIdRef.current = state.modalId || null;
+        if (state.page !== activePageRef.current) setQuery("");
+        activePageRef.current = state.page || "dashboard";
+        setActivePage(state.page || "dashboard");
+        setModalState(state.modalId ? modalHistoryRef.current.get(state.modalId) || null : null);
+        setMobileNav(false);
+        return;
+      }
+      if (activeModalHistoryIdRef.current) modalHistoryRef.current.delete(activeModalHistoryIdRef.current);
+      activeModalHistoryIdRef.current = null;
+      setModalState(null);
+      setMobileNav(false);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [session]);
   useEffect(() => {
     const timer = window.setTimeout(() => setBootStage("access"), 1900);
     return () => window.clearTimeout(timer);
@@ -924,12 +991,16 @@ export default function App() {
   const nav = (page) => {
     if (page === "new-booking") setModal({ type: "booking" });
     else {
+      const nextPage = page === "today-deliveries" ? "tomorrow" : page;
       if (page === "today-deliveries") {
-        setActivePage("tomorrow");
         setPrepDateRange({ from: today, to: today });
       } else {
         if (page === "tomorrow") setPrepDateRange({ from: today, to: dateAfter(today, 1) });
-        setActivePage(page);
+      }
+      if (nextPage !== activePageRef.current) {
+        window.history.pushState({ drbApp: true, page: nextPage, modalId: null }, "");
+        activePageRef.current = nextPage;
+        setActivePage(nextPage);
       }
       setQuery("");
     }
@@ -973,8 +1044,12 @@ export default function App() {
   const signOut = () => {
     setSession(null);
     setActivePage("dashboard");
+    activePageRef.current = "dashboard";
     setQuery("");
-    setModal(null);
+    setModalState(null);
+    modalHistoryRef.current.clear();
+    activeModalHistoryIdRef.current = null;
+    window.history.replaceState({ drbApp: true, page: "dashboard", modalId: null }, "");
     requestSignOut().catch((error) => {
       console.error("Could not revoke the signed-out session:", error);
       notify("Signed out on this device, but the server session could not be revoked.");
@@ -1313,16 +1388,16 @@ export default function App() {
       <div className="page-content">{content}<footer className="app-footer"><span>© {new Date().getFullYear()} {businessSettings.name}</span><span className={`sync-indicator sync-${syncStatus}`} role="status" title={syncError}><i />{syncStatus === "synced" ? "Cloud synced · local backup saved" : syncStatus === "syncing" ? "Syncing · local backup saved" : "Cloud unavailable · saved locally"}</span><span>Made for your boutique <span className="heart">♥</span></span></footer></div>
     </main>
     {modal?.type === "article" && <Modal title="Add new article" description="Add a rental piece to your boutique collection." onClose={() => setModal(null)}>
-      <ArticleForm onSubmit={handleArticleSubmit} onCancel={() => setModal(null)} />
+      <ArticleForm articles={articles} onSubmit={handleArticleSubmit} onCancel={() => setModal(null)} />
     </Modal>}
     {modal?.type === "article-edit" && <Modal title="Edit article" description="Update article details or replace and crop its photo." onClose={() => setModal(null)}>
-      <ArticleForm article={modal.article} onSubmit={handleArticleSubmit} onCancel={() => setModal(null)} onDelete={handleArticleDelete} isAdmin={role === "admin"} />
+      <ArticleForm articles={articles} article={modal.article} onSubmit={handleArticleSubmit} onCancel={() => setModal(null)} onDelete={handleArticleDelete} isAdmin={role === "admin"} />
     </Modal>}
     {modal?.type === "booking" && <Modal title="Create a booking" description="Reserve an article and capture the rental details." onClose={() => setModal(null)} wide>
       <BookingForm articles={articles} customers={customers} onCreateCustomer={handleBookingCustomerCreate} onSubmit={handleBookingSubmit} onCancel={() => setModal(null)} onAddArticle={(category) => setModal({ ...modal, quickArticle: true, quickArticleCategory: category })} addedArticleId={quickCreatedArticleId} onAddedArticleHandled={() => setQuickCreatedArticleId("")} />
     </Modal>}
-    {modal?.type === "booking" && modal.quickArticle && <Modal title="Add an article" description="Create an inventory article, then it will be selected in this booking." onClose={() => setModal({ type: "booking" })}>
-      <ArticleForm initialCategory={modal.quickArticleCategory} onSubmit={(event) => handleArticleSubmit(event, null, false)} onSaved={(article) => { setQuickCreatedArticleId(article.id); setModal({ type: "booking" }); }} onCancel={() => setModal({ type: "booking" })} />
+    {modal?.type === "booking" && modal.quickArticle && <Modal title="Add an article" description="Create an inventory article, then it will be selected in this booking." onClose={() => window.history.back()}>
+      <ArticleForm articles={articles} initialCategory={modal.quickArticleCategory} onSubmit={(event) => handleArticleSubmit(event, null, false)} onSaved={(article) => { setQuickCreatedArticleId(article.id); window.history.back(); }} onCancel={() => window.history.back()} />
     </Modal>}
     {modal?.type === "booking-edit" && role === "admin" && <Modal title="Edit booking" description={`Update reservation details for ${modal.booking.id}.`} onClose={() => setModal(null)} wide>
       <BookingForm key={modal.booking.id} booking={modal.booking} articles={articles} customers={customers} onCreateCustomer={handleBookingCustomerCreate} onSubmit={handleBookingSubmit} onCancel={() => setModal(null)} />
@@ -1458,10 +1533,10 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
         <button className="button button-outline inline-save-customer" type="button" onClick={createCustomer}><Check size={13} />Save & select customer</button>
       </div>}
     </div>
-    <Field label="Booking date"><input type="date" value={booking?.bookingDate || today} readOnly /></Field>
+    <Field label="Booking date"><input lang="en-GB" type="date" value={booking?.bookingDate || today} readOnly /></Field>
     {!hideMeasurements && <div className="booking-measurements field-full"><strong>Customer measurements <span>(optional · inches)</span></strong><div><Field label="Chest"><input name="chest" type="number" min="0" step="0.1" defaultValue={booking?.chest || ""} placeholder="Chest size" /></Field><Field label="Back"><input name="back" type="number" min="0" step="0.1" defaultValue={booking?.back || ""} placeholder="Back size" /></Field><Field label="Hip"><input name="hip" type="number" min="0" step="0.1" defaultValue={booking?.hip || ""} placeholder="Hip size" /></Field></div></div>}
-    <Field label="Delivery date *"><input type="date" name="delivery" min={booking ? undefined : today} value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} required /></Field>
-    <Field label="Expected return date *"><input type="date" name="returnDate" min={deliveryDate || (booking ? undefined : today)} defaultValue={booking?.returnDate || ""} required /></Field>
+    <Field label="Delivery date *"><input lang="en-GB" type="date" name="delivery" min={booking ? undefined : today} value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} required /></Field>
+    <Field label="Expected return date *"><input lang="en-GB" type="date" name="returnDate" min={deliveryDate || (booking ? undefined : today)} defaultValue={booking?.returnDate || ""} required /></Field>
     <Field label="Agreed rental price (PKR) *"><input type="number" name="amount" min="1" placeholder="Enter rental price" value={amount} onChange={(event) => setAmount(event.target.value)} required />
       {selectedArticles.length > 0 && <small className="suggested-price">Suggested total for {selectedArticles.length} article{selectedArticles.length === 1 ? "" : "s"}: {currency(selectedArticles.reduce((sum, item) => sum + item.price, 0))}</small>}</Field>
     <Field label={booking ? "Advance received (PKR)" : "Advance payment (PKR)"}><input type="number" name="paid" min="0" value={paid} onChange={(event) => setPaid(event.target.value)} readOnly={Boolean(booking)} />{booking && <small className="suggested-price">Payments are managed from the Payments page.</small>}</Field>
@@ -1485,7 +1560,9 @@ function CityOptions() {
   return <datalist id="customer-cities">{["Lahore", "Karachi", "Islamabad", "Rawalpindi", "Faisalabad", "Multan", "Peshawar", "Quetta", "Sialkot", "Gujranwala", "Sheikhupura", "Gujrat", "Bahawalpur", "Sargodha", "Hyderabad"].map((city) => <option value={city} key={city} />)}</datalist>;
 }
 
-function ArticleForm({ article, initialCategory, onSubmit, onCancel, onSaved, onDelete, isAdmin = true }) {
+function ArticleForm({ articles, article, initialCategory, onSubmit, onCancel, onSaved, onDelete, isAdmin = true }) {
+  const [category, setCategory] = useState(article?.category || initialCategory || "");
+  const [articleNumber, setArticleNumber] = useState(article?.id || (category === "Bridal Wear" ? nextBridalArticleNumber(articles) : ""));
   const [photo, setPhoto] = useState(article?.photo || "");
   const [priceMin, setPriceMin] = useState(String(article?.priceMin ?? (article ? Math.max(0, article.price - 500) : "")));
   const [priceMax, setPriceMax] = useState(String(article?.priceMax ?? (article ? article.price + 500 : "")));
@@ -1494,9 +1571,13 @@ function ArticleForm({ article, initialCategory, onSubmit, onCancel, onSaved, on
     if (savedArticle && !article) onSaved?.(savedArticle);
   };
   return <form className="form-grid" onSubmit={submit}>
-    <Field label="Article number *"><input name="id" defaultValue={article?.id || ""} readOnly={Boolean(article)} placeholder="e.g. DRB-BRT-032" required /></Field>
+    <Field label="Article number *"><input name="id" value={articleNumber} onChange={(event) => setArticleNumber(event.target.value)} readOnly={Boolean(article) || category === "Bridal Wear"} placeholder={category === "Bridal Wear" ? "Auto-generated" : "e.g. DRB-BRT-032"} required /></Field>
     <Field label="Article name *"><input name="name" defaultValue={article?.name || ""} placeholder="e.g. Rose Gold Bridal Lehnga" required /></Field>
-    <Field label="Category *"><select name="category" required defaultValue={article?.category || initialCategory || ""}><option value="" disabled>Select category</option>{categoriesForArticles(article ? [article] : []).map((category) => <option key={category}>{category}</option>)}</select></Field>
+    <Field label="Category *"><select name="category" required value={category} onChange={(event) => {
+      const nextCategory = event.target.value;
+      setCategory(nextCategory);
+      if (!article) setArticleNumber(nextCategory === "Bridal Wear" ? nextBridalArticleNumber(articles) : "");
+    }}><option value="" disabled>Select category</option>{categoriesForArticles(article ? [article] : []).map((categoryOption) => <option key={categoryOption}>{categoryOption}</option>)}</select></Field>
     <Field label="Availability"><select name="status" defaultValue={article?.status || "Available"}><option>Available</option><option>Booked</option><option>Maintenance</option></select></Field>
     <Field label="Suggested rental minimum (PKR) *"><input name="priceMin" type="number" min="0" value={priceMin} onChange={(event) => setPriceMin(event.target.value)} placeholder="3000" required /></Field>
     <Field label="Suggested rental maximum (PKR) *"><input name="priceMax" type="number" min="0" value={priceMax} onChange={(event) => setPriceMax(event.target.value)} placeholder="5000" required /></Field>
