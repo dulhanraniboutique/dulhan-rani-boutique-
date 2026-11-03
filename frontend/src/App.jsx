@@ -65,6 +65,22 @@ const bookingArticleIds = (booking) => booking.articles?.map((article) => typeof
 const bookingArticleNames = (booking) => booking.articles?.map((article) => typeof article === "string" ? article : article.name).filter(Boolean) || (booking.articleName ? [booking.articleName] : []);
 const bookingArticleLabels = (booking) => bookingArticleIds(booking).join(", ");
 const bookingArticleTitles = (booking) => bookingArticleNames(booking).join(", ");
+const validatePakistaniPhone = (phone) => {
+  const compact = phone.trim().replace(/[\s()-]/g, "");
+  const digits = compact.replace(/\D/g, "");
+  if (compact.startsWith("03")) {
+    if (digits.length < 11) return `A number starting with 03 needs 11 digits total; add ${11 - digits.length} more digit${11 - digits.length === 1 ? "" : "s"}.`;
+    if (digits.length > 11) return `A number starting with 03 needs 11 digits total; remove ${digits.length - 11} extra digit${digits.length - 11 === 1 ? "" : "s"}.`;
+    return /^03\d{9}$/.test(digits) ? "" : "After 03, the mobile number must contain 9 digits.";
+  }
+  if (compact.startsWith("+92")) {
+    const nationalDigits = digits.slice(2);
+    if (nationalDigits.length < 10) return `After +92, enter 10 digits; add ${10 - nationalDigits.length} more digit${10 - nationalDigits.length === 1 ? "" : "s"}.`;
+    if (nationalDigits.length > 10) return `After +92, enter 10 digits; remove ${nationalDigits.length - 10} extra digit${nationalDigits.length - 10 === 1 ? "" : "s"}.`;
+    return /^3\d{9}$/.test(nationalDigits) ? "" : "After +92, the mobile number must start with 3 and contain 10 digits.";
+  }
+  return "Use 11 digits starting with 03, or +92 followed by 10 mobile digits.";
+};
 const bookingArticleRecords = (booking, inventory) => {
   const savedArticles = booking.articles?.length
     ? booking.articles
@@ -1427,10 +1443,6 @@ export default function App() {
       phone2: String(form.get("customerPhone2") || "").trim(),
       address: String(form.get("customerAddress") || "").trim(),
     };
-    const isValidPakistaniPhone = (phone) => {
-      const compact = phone.trim().replace(/[\s()-]/g, "");
-      return /^03\d{9}$/.test(compact) || /^\+923\d{9}$/.test(compact);
-    };
     if (selectedArticles.length !== selectedIds.length) {
       notify("Check the selected articles and try again.");
       return;
@@ -1439,9 +1451,10 @@ export default function App() {
       notify("Enter the customer name, phone number, and address.");
       return;
     }
-    if (!isValidPakistaniPhone(customerDetails.phone)
-      || (customerDetails.phone2 && !isValidPakistaniPhone(customerDetails.phone2))) {
-      notify("Enter a complete phone number: 11 digits starting with 03, or +92 followed by 10 digits.");
+    const phoneError = validatePakistaniPhone(customerDetails.phone)
+      || (customerDetails.phone2 ? validatePakistaniPhone(customerDetails.phone2) : "");
+    if (phoneError) {
+      notify(phoneError);
       return;
     }
     const previousCustomer = existing && customers.find((item) => item.id === existing.customerId || item.name === existing.customer);
