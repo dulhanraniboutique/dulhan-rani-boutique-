@@ -4,7 +4,7 @@ import {
   ChevronRight, CircleDollarSign, Clock3, Download, FileText, LayoutDashboard,
   Gem, LogOut, Menu, MoreHorizontal, Plus, Search, Settings, ShieldCheck, Shirt, ShoppingCart,
   SlidersHorizontal, Sparkles, Users, Wallet, X, UserRound, Truck, LockKeyhole,
-  RotateCcw, ChartNoAxesCombined, CreditCard, Eye, Pencil, AlertTriangle, Trash2,
+  RotateCcw, RefreshCw, ChartNoAxesCombined, CreditCard, Eye, Pencil, AlertTriangle, Trash2,
 } from "lucide-react";
 import { seedArticles, seedBookings, seedCustomers, seedPayments } from "./data.js";
 import AccessScreen from "./AccessScreen.jsx";
@@ -32,15 +32,27 @@ const categoriesForArticles = (articles) => [
   ...articleCategories,
   ...new Set(articles.map((article) => article.category).filter((category) => category && !articleCategories.includes(category))),
 ];
-const nextBridalArticleNumber = (articles) => {
+const categoryArticlePrefixes = {
+  "Bridal Wear": "BW",
+  "Party Wear": "PW",
+  "Groom Wear": "GW",
+  "Men's Wear": "MW",
+  "Jewellery Set": "JS",
+};
+const nextCategoryArticleNumber = (articles, category) => {
+  const prefix = categoryArticlePrefixes[category]
+    || category.split(/[^a-z0-9]+/i).filter(Boolean).map((part) => part[0]).join("").toUpperCase()
+    || "ART";
   const usedIds = new Set(articles.map((article) => article.id.toLowerCase()));
-  let number = articles.reduce((highest, article) => {
-    if (article.category !== "Bridal Wear" || !/^\d+$/.test(article.id)) return highest;
-    return Math.max(highest, Number(article.id));
+  const categoryArticles = articles.filter((article) => article.category === category);
+  const highestExistingNumber = categoryArticles.reduce((highest, article) => {
+    const match = new RegExp(`^${prefix}-(\\d+)$`, "i").exec(article.id);
+    return match ? Math.max(highest, Number(match[1])) : highest;
   }, 0);
+  let number = Math.max(categoryArticles.length, highestExistingNumber);
   let candidate;
   do {
-    candidate = String(++number).padStart(3, "0");
+    candidate = `${prefix}-${String(++number).padStart(3, "0")}`;
   } while (usedIds.has(candidate.toLowerCase()));
   return candidate;
 };
@@ -326,7 +338,7 @@ function ArticleCard({ article, onEdit }) {
     {article.photo ? <img src={article.photo} alt={article.name} /> : <div className="photo-placeholder"><Shirt size={34} /><span>Article photo</span></div>}
     <Status>{article.status}</Status><button className="article-menu" aria-label={`Edit ${article.name}`} onClick={() => onEdit(article)}><Pencil size={15} /></button></div>
     <div className="article-info"><div className="article-category">{article.category} <span>·</span> {article.id}</div><h3>{article.name}</h3>
-      <div className="article-meta"><span>Suggested rental</span><strong>{currency(article.priceMin ?? article.price)}–{currency(article.priceMax ?? article.price)} <small>/ booking</small></strong></div>
+      <div className="article-meta"><span>Suggested rental</span><strong>{currency(article.priceMin ?? article.price)} <small>/ booking</small></strong></div>
       <div className="article-card-footer"><span>Min. order <strong>{currency(article.minOrder)}</strong></span><button aria-label={`Edit ${article.name}`} onClick={() => onEdit(article)}><Pencil size={15} /></button></div></div></article>;
 }
 
@@ -882,6 +894,9 @@ export default function App() {
   const [activePage, setActivePage] = useState("dashboard");
   const [prepDateRange, setPrepDateRange] = useState(() => ({ from: today, to: dateAfter(today, 1) }));
   const [bootStage, setBootStage] = useState("splash");
+  const [pullRefresh, setPullRefresh] = useState({ distance: 0, active: false });
+  const pullRefreshRef = useRef({ startY: 0, distance: 0, pulling: false });
+  const isRefreshingRef = useRef(false);
   const [query, setQuery] = useState("");
   const [modal, setModalState] = useState(null);
   const activePageRef = useRef(activePage);
@@ -976,6 +991,83 @@ export default function App() {
     window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(""), 5000);
   };
+  const refreshAllDataRef = useRef(null);
+  refreshAllDataRef.current = async () => {
+    const collections = [
+      ["articles", setArticles],
+      ["bookings", setBookings],
+      ["customers", setCustomers],
+      ["payments", setPayments],
+      ["sales", setSales],
+      ["settings", setWorkspaceSettings],
+    ];
+    const results = await Promise.allSettled(collections.map(async ([collection, setCollection]) => {
+      const items = await refreshCollection(collection);
+      setCollection(items);
+      return collection;
+    }));
+    const errors = results.flatMap((result, index) => result.status === "rejected"
+      ? [`${collections[index][0]}: ${result.reason instanceof Error ? result.reason.message : "Refresh failed"}`]
+      : []);
+    if (errors.length) notify(`Cloud refresh failed. ${errors.join(" · ")}`);
+    else notify("Cloud data refreshed.");
+  };
+  useEffect(() => {
+    if (!session) return undefined;
+    const resetPull = () => {
+      pullRefreshRef.current.pulling = false;
+      pullRefreshRef.current.distance = 0;
+      setPullRefresh({ distance: 0, active: false });
+    };
+    const onTouchStart = (event) => {
+      if (event.touches.length !== 1 || isRefreshingRef.current || modalRef.current || window.scrollY > 0 || document.scrollingElement?.scrollTop > 0) return;
+      if (event.target.closest?.("input, textarea, select, button, a, [role='dialog']")) return;
+      pullRefreshRef.current = { startY: event.touches[0].clientY, distance: 0, pulling: true };
+    };
+    const onTouchMove = (event) => {
+      const pull = pullRefreshRef.current;
+      if (!pull.pulling || event.touches.length !== 1) return;
+      const delta = event.touches[0].clientY - pull.startY;
+      if (delta <= 0) {
+        resetPull();
+        return;
+      }
+      if (window.scrollY > 0 || document.scrollingElement?.scrollTop > 0) {
+        resetPull();
+        return;
+      }
+      event.preventDefault();
+      pull.distance = Math.min(delta * 0.55, 96);
+      setPullRefresh({ distance: pull.distance, active: false });
+    };
+    const onTouchEnd = () => {
+      const shouldRefresh = pullRefreshRef.current.pulling && pullRefreshRef.current.distance >= 68;
+      pullRefreshRef.current.pulling = false;
+      if (!shouldRefresh) {
+        resetPull();
+        return;
+      }
+      pullRefreshRef.current.distance = 72;
+      isRefreshingRef.current = true;
+      setPullRefresh({ distance: 72, active: true });
+      refreshAllDataRef.current()
+        .finally(() => {
+          isRefreshingRef.current = false;
+          resetPull();
+        });
+    };
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    window.addEventListener("touchend", onTouchEnd, { passive: true });
+    window.addEventListener("touchcancel", resetPull, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onTouchEnd);
+      window.removeEventListener("touchcancel", resetPull);
+      resetPull();
+    };
+  }, [session]);
   const configuredNotifications = { ...defaultNotificationSettings, ...notificationSettings };
   const role = session?.role || "admin";
   const activeSalesperson = session?.role === "sales" ? salespeople.find((person) => person.id === session.id) : null;
@@ -1132,9 +1224,19 @@ export default function App() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const priceMin = Number(form.get("priceMin"));
-    const priceMax = Number(form.get("priceMax"));
-    if (priceMax < priceMin) { notify("Maximum suggested rental must be at least the minimum."); return; }
-    const next = { id: editingArticleId || form.get("id").trim(), name: form.get("name").trim(), category: form.get("category"), price: Math.round((priceMin + priceMax) / 2), priceMin, priceMax, minOrder: Number(form.get("minOrder")), status: form.get("status"), photo: form.get("photoData") || "", color: form.get("color") || "rose" };
+    const category = form.get("category");
+    const next = {
+      id: editingArticleId || nextCategoryArticleNumber(articles, category),
+      name: form.get("name").trim(),
+      category,
+      price: priceMin,
+      priceMin,
+      priceMax: priceMin,
+      minOrder: Number(form.get("minOrder")),
+      status: editingArticleId ? articles.find((item) => item.id === editingArticleId)?.status || "Available" : "Available",
+      photo: form.get("photoData") || "",
+      color: form.get("color") || "rose",
+    };
     if (!editingArticleId && articles.some((item) => item.id.toLowerCase() === next.id.toLowerCase())) { notify("That article number is already in use."); return; }
     setArticles(editingArticleId
       ? articles.map((item) => item.id === editingArticleId ? next : item)
@@ -1171,10 +1273,32 @@ export default function App() {
     const form = new FormData(event.currentTarget);
     const selectedIds = form.getAll("articles").map(String);
     const selectedArticles = articles.filter((item) => selectedIds.includes(item.id));
-    const customer = customers.find((item) => item.id === form.get("customer"));
     const existing = editingBookingId ? bookings.find((item) => item.id === editingBookingId) : null;
+    const customerDetails = {
+      name: String(form.get("customerName") || "").trim(),
+      phone: String(form.get("customerPhone") || "").trim(),
+      phone2: String(form.get("customerPhone2") || "").trim(),
+      address: String(form.get("customerAddress") || "").trim(),
+    };
     if (editingBookingId && role !== "admin") { notify("Only an administrator can edit bookings."); return; }
-    if (selectedArticles.length !== selectedIds.length || !customer || (editingBookingId && !existing)) { notify("Choose a customer and make sure selected articles are valid."); return; }
+    if (selectedArticles.length !== selectedIds.length) {
+      notify("Check the selected articles and try again.");
+      return;
+    }
+    if (!customerDetails.name || !customerDetails.phone || !customerDetails.address || (editingBookingId && !existing)) {
+      notify("Enter the customer name, phone number, and address.");
+      return;
+    }
+    const previousCustomer = existing && customers.find((item) => item.id === existing.customerId || item.name === existing.customer);
+    const customer = {
+      ...(previousCustomer || {}),
+      id: previousCustomer?.id || createRecordId("CUS"),
+      ...customerDetails,
+      city: previousCustomer?.city || "",
+      cnic: previousCustomer?.cnic || "—",
+      bookings: previousCustomer?.bookings || 0,
+      due: previousCustomer?.due || 0,
+    };
     const delivery = form.get("delivery"), returnDate = form.get("returnDate");
     if (returnDate < delivery) {
       notify("Check the booking dates: return date must be on or after delivery.");
@@ -1203,6 +1327,7 @@ export default function App() {
       customer: customer.name,
       phone: customer.phone,
       phone2: customer.phone2 || "",
+      address: customer.address,
       articles: normalizedArticles,
       article: normalizedArticles.map((item) => item.id).join(", "),
       articleName: normalizedArticles.map((item) => item.name).join(", "),
@@ -1218,6 +1343,9 @@ export default function App() {
       notes: form.get("notes"),
     };
     if (existing) {
+      setCustomers(previousCustomer
+        ? customers.map((item) => item.id === customer.id ? customer : item)
+        : [customer, ...customers]);
       const updatedBookings = bookings.map((item) => item.id === existing.id ? nextBooking : item);
       setBookings(updatedBookings);
       setPayments(payments.map((payment) => payment.booking === existing.id ? { ...payment, customer: customer.name } : payment));
@@ -1233,6 +1361,7 @@ export default function App() {
       notify(`Booking ${existing.id} updated successfully.`);
       return;
     }
+    setCustomers([customer, ...customers]);
     setBookings([nextBooking, ...bookings]);
     setArticles(articles.map((item) => selectedIds.includes(item.id) && item.status !== "Maintenance" ? { ...item, status: "Booked" } : item));
     if (paid > 0) setPayments([{
@@ -1297,22 +1426,6 @@ export default function App() {
     const form = new FormData(event.currentTarget);
     const next = { id: createRecordId("CUS"), name: form.get("name").trim(), phone: form.get("phone").trim(), phone2: form.get("phone2").trim(), address: form.get("address").trim(), city: form.get("city").trim(), cnic: form.get("cnic") || "—", bookings: 0, due: 0 };
     setCustomers([next, ...customers]); setModal(null); notify("Customer added successfully.");
-  };
-  const handleBookingCustomerCreate = (details) => {
-    const next = {
-      id: createRecordId("CUS"),
-      name: details.name.trim(),
-      phone: details.phone.trim(),
-      phone2: details.phone2.trim(),
-      address: details.address.trim(),
-      city: details.city.trim(),
-      cnic: details.cnic.trim() || "—",
-      bookings: 0,
-      due: 0,
-    };
-    setCustomers([next, ...customers]);
-    notify(`${next.name} added to customers.`);
-    return next;
   };
   const handlePaymentSubmit = (event) => {
     event.preventDefault();
@@ -1411,6 +1524,9 @@ export default function App() {
   const detailArticles = modal?.type === "booking-detail" ? bookingArticleRecords(modal.booking, articles) : [];
 
   return <div className="app-shell">
+    <div className={`pull-refresh-indicator${pullRefresh.active ? " pull-refresh-active" : ""}`} style={{ top: `calc(env(safe-area-inset-top) + ${pullRefresh.distance - 48}px)` }} role="status" aria-live="polite">
+      <RefreshCw size={17} /><span>{pullRefresh.active ? "Refreshing cloud data…" : pullRefresh.distance >= 68 ? "Release to refresh" : "Pull to refresh"}</span>
+    </div>
     {mobileNav && <button className="mobile-backdrop" onClick={() => setMobileNav(false)} aria-label="Close navigation" />}
     <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
       <div className="brand"><div className="brand-mark"><span>DR</span><i>✦</i></div><div className="brand-name"><strong>Dulhan Rani</strong><span>BOUTIQUE MANAGEMENT</span></div><button className="sidebar-close icon-button" onClick={() => setMobileNav(false)}><X size={18} /></button></div>
@@ -1432,22 +1548,22 @@ export default function App() {
       <div className="page-content">{content}<footer className="app-footer"><span>© {new Date().getFullYear()} {businessSettings.name}</span><span className={`sync-indicator sync-${syncStatus}`} role="status" title={syncError}><i />{syncStatus === "synced" ? "Cloud synced · local backup saved" : syncStatus === "syncing" ? "Syncing · local backup saved" : "Cloud unavailable · saved locally"}</span><span>Made for your boutique <span className="heart">♥</span></span></footer></div>
     </main>
     {modal?.type === "article" && <Modal title="Add new article" description="Add a rental piece to your boutique collection." onClose={() => setModal(null)}>
-      <ArticleForm articles={articles} onSubmit={handleArticleSubmit} onCancel={() => setModal(null)} />
+      <ArticleForm onSubmit={handleArticleSubmit} onCancel={() => setModal(null)} />
     </Modal>}
     {modal?.type === "article-edit" && <Modal title="Edit article" description="Update article details or replace and crop its photo." onClose={() => setModal(null)}>
-      <ArticleForm articles={articles} article={modal.article} onSubmit={handleArticleSubmit} onCancel={() => setModal(null)} onDelete={handleArticleDelete} isAdmin={role === "admin"} />
+      <ArticleForm article={modal.article} onSubmit={handleArticleSubmit} onCancel={() => setModal(null)} onDelete={handleArticleDelete} isAdmin={role === "admin"} />
     </Modal>}
-    {modal?.type === "booking" && <Modal title="Create a booking" description="Reserve an article and capture the rental details." onClose={() => setModal(null)} wide>
-      <BookingForm articles={articles} customers={customers} onCreateCustomer={handleBookingCustomerCreate} onSubmit={handleBookingSubmit} onCancel={() => setModal(null)} onAddArticle={(category) => setModal({ ...modal, quickArticle: true, quickArticleCategory: category })} addedArticleId={quickCreatedArticleId} onAddedArticleHandled={() => setQuickCreatedArticleId("")} />
+    {modal?.type === "booking" && <Modal title="Create a booking" description="Capture customer and rental details. Selecting articles is optional." onClose={() => setModal(null)} wide>
+      <BookingForm articles={articles} customers={customers} onSubmit={handleBookingSubmit} onCancel={() => setModal(null)} onAddArticle={(category) => setModal({ ...modal, quickArticle: true, quickArticleCategory: category })} addedArticleId={quickCreatedArticleId} onAddedArticleHandled={() => setQuickCreatedArticleId("")} />
     </Modal>}
     {modal?.type === "sale" && <Modal title="Record a sale" description="Record a sale without rental dates or measurements." onClose={() => setModal(null)}>
       <SaleForm onSubmit={handleSaleSubmit} onCancel={() => setModal(null)} />
     </Modal>}
     {modal?.type === "booking" && modal.quickArticle && <Modal title="Add an article" description="Create an inventory article, then it will be selected in this booking." onClose={() => window.history.back()}>
-      <ArticleForm articles={articles} initialCategory={modal.quickArticleCategory} onSubmit={(event) => handleArticleSubmit(event, null, false)} onSaved={(article) => { setQuickCreatedArticleId(article.id); window.history.back(); }} onCancel={() => window.history.back()} />
+      <ArticleForm initialCategory={modal.quickArticleCategory} onSubmit={(event) => handleArticleSubmit(event, null, false)} onSaved={(article) => { setQuickCreatedArticleId(article.id); window.history.back(); }} onCancel={() => window.history.back()} />
     </Modal>}
     {modal?.type === "booking-edit" && role === "admin" && <Modal title="Edit booking" description={`Update reservation details for ${modal.booking.id}.`} onClose={() => setModal(null)} wide>
-      <BookingForm key={modal.booking.id} booking={modal.booking} articles={articles} customers={customers} onCreateCustomer={handleBookingCustomerCreate} onSubmit={handleBookingSubmit} onCancel={() => setModal(null)} />
+      <BookingForm key={modal.booking.id} booking={modal.booking} articles={articles} customers={customers} onSubmit={handleBookingSubmit} onCancel={() => setModal(null)} />
     </Modal>}
     {modal?.type === "customer" && <Modal title="Add customer" description="Save customer contact details for future bookings." onClose={() => setModal(null)}>
       <form className="form-grid" onSubmit={handleCustomerSubmit}><Field label="Customer name *"><input name="name" placeholder="Full name" required /></Field><Field label="Phone number 1 *"><input name="phone" type="tel" placeholder="+92 300 0000000" required /></Field><Field label="Phone number 2 (optional)"><input name="phone2" type="tel" placeholder="+92 300 0000000" /></Field><Field label="CNIC number"><input name="cnic" placeholder="Optional" /></Field><Field label="Area / street address *"><input name="address" placeholder="e.g. Gulberg III" required /></Field><Field label="City *"><input name="city" list="customer-cities" placeholder="Select or type a city" required /><CityOptions /></Field><div className="modal-actions"><Button variant="outline" onClick={() => setModal(null)}>Cancel</Button><Button type="submit" icon={Plus}>Save customer</Button></div></form>
@@ -1488,7 +1604,7 @@ export default function App() {
   </div>;
 }
 
-function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit, onCancel, onAddArticle, addedArticleId, onAddedArticleHandled }) {
+function BookingForm({ booking, articles, customers, onSubmit, onCancel, onAddArticle, addedArticleId, onAddedArticleHandled }) {
   const [selectedArticleIds, setSelectedArticleIds] = useState(booking ? bookingArticleIds(booking) : []);
   const selectedArticles = articles.filter((item) => selectedArticleIds.includes(item.id));
   const jewelleryOnly = selectedArticles.length > 0 && selectedArticles.every((item) => item.category === "Jewellery Set");
@@ -1500,9 +1616,8 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
   const hideMeasurements = !hasOutfit
     && (articleCategory === "Jewellery Set" || (articleCategory === "All categories" && jewelleryOnly));
   const matchingArticles = articles.filter((item) => (item.status === "Available" || selectedArticleIds.includes(item.id))
-    && (articleCategory === "Jewellery Set"
-      ? item.category === "Jewellery Set"
-      : item.category !== "Jewellery Set" && (articleCategory === "All categories" || item.category === articleCategory))
+    && item.category !== "Jewellery Set"
+    && (articleCategory === "All categories" || item.category === articleCategory)
     && (selectedArticleIds.includes(item.id) || !articleSearch.trim() || `${item.id} ${item.name} ${item.category}`.toLowerCase().includes(articleSearch.trim().toLowerCase())));
   const jewellerySets = articles.filter((item) => item.category === "Jewellery Set"
     && (item.status === "Available" || selectedArticleIds.includes(item.id)));
@@ -1511,11 +1626,13 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
     setSelectedArticleIds(nextIds);
     setAmount(String(articles.filter((item) => nextIds.includes(item.id)).reduce((sum, item) => sum + item.price, 0)));
   };
-  const initialCustomerId = booking?.customerId || customers.find((customer) => customer.name === booking?.customer)?.id || "";
-  const [customerChoice, setCustomerChoice] = useState(initialCustomerId);
-  const [showNewCustomer, setShowNewCustomer] = useState(false);
-  const [newCustomer, setNewCustomer] = useState({ name: "", phone: "", phone2: "", address: "", city: "", cnic: "" });
-  const [customerError, setCustomerError] = useState("");
+  const previousCustomer = booking && customers.find((customer) => customer.id === booking.customerId || customer.name === booking.customer);
+  const [customerDetails, setCustomerDetails] = useState({
+    name: booking?.customer || "",
+    phone: booking?.phone || previousCustomer?.phone || "",
+    phone2: booking?.phone2 || previousCustomer?.phone2 || "",
+    address: booking?.address || previousCustomer?.address || "",
+  });
   const [amount, setAmount] = useState(booking ? String(booking.amount ?? "") : "");
   const [paid, setPaid] = useState(booking ? String(booking.paid ?? "") : "");
   const [returnDate, setReturnDate] = useState(booking?.returnDate || "");
@@ -1527,62 +1644,21 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
     setArticleSearch("");
     onAddedArticleHandled();
   }, [addedArticleId]);
-  const createCustomer = () => {
-    if (!newCustomer.name.trim() || !newCustomer.phone.trim() || !newCustomer.address.trim() || !newCustomer.city.trim()) {
-      setCustomerError("Name, first phone number, address, and city are required.");
-      return;
-    }
-    const created = onCreateCustomer(newCustomer);
-    setCustomerChoice(created.id);
-    setNewCustomer({ name: "", phone: "", phone2: "", address: "", city: "", cnic: "" });
-    setCustomerError("");
-    setShowNewCustomer(false);
-  };
   return <form className="form-grid" onSubmit={(event) => onSubmit(event, booking?.id || null)}>
-    <div className="booking-article-picker field-full"><strong>Select articles <span>Optional — choose items if needed, or create a booking without an article. Jewellery sets can be booked alone or with an outfit.</span></strong>
-      <Field label="Category"><select aria-label="Filter articles by category" value={articleCategory} onChange={(event) => setArticleCategory(event.target.value)}><option>All categories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select></Field>
+    <div className="booking-article-picker field-full">
+      <Field label="Category"><select aria-label="Filter articles by category" value={articleCategory} onChange={(event) => setArticleCategory(event.target.value)}><option>All categories</option>{categories.filter((category) => category !== "Jewellery Set").map((category) => <option key={category}>{category}</option>)}</select></Field>
       <label className="booking-article-search"><Search size={15} /><input type="search" aria-label="Search articles for booking" placeholder="Type article name or number..." value={articleSearch} onChange={(event) => setArticleSearch(event.target.value)} /></label>
+      {onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={() => onAddArticle(articleCategory === "All categories" ? undefined : articleCategory)}>Add new article to collection</Button>}
       <div className="booking-article-options">{matchingArticles.map((article) => <BookingArticleOption key={article.id} article={article} selected={selectedArticleIds.includes(article.id)} onToggle={toggleArticle} />)}
       {matchingArticles.length === 0 && <p className="booking-article-empty">{articleSearch.trim() ? "No matching articles found." : "No available articles."}</p>}</div>
-      {articleCategory !== "Jewellery Set" && <section className="booking-jewellery-section" aria-label="Jewellery set selection">
-        <strong>Jewellery sets <span>Optional — book alone or with an outfit.</span></strong>
-        {jewellerySets.length
-          ? <div className="booking-article-options">{jewellerySets.map((article) => <BookingArticleOption key={article.id} article={article} selected={selectedArticleIds.includes(article.id)} onToggle={toggleArticle} icon={Gem} />)}</div>
-          : <p className="booking-article-empty">No jewellery sets available. Add a Jewellery Set article to your collection.</p>}
-        {onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={() => onAddArticle("Jewellery Set")}>Add jewellery set</Button>}
-      </section>}
       {selectedArticles.length > 0 && <p className="booking-selected-count">{selectedArticles.length} article{selectedArticles.length === 1 ? "" : "s"} selected</p>}
-      {onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={() => onAddArticle()}>Add new article to collection</Button>}
     </div>
-    <div className="booking-customer-field">
-      <Field label="Customer *"><select name="customer" required value={customerChoice} onChange={(event) => {
-        const choice = event.target.value;
-        if (choice === "__new_customer__") {
-          setCustomerChoice("");
-          setShowNewCustomer(true);
-          setCustomerError("");
-          return;
-        }
-        setCustomerChoice(choice);
-      }}><option value="" disabled>Select a customer</option><option value="__new_customer__">＋ New customer — add now</option>{customers.map((customer) => <option value={customer.id} key={customer.id}>{customer.name} · {customer.phone}</option>)}</select></Field>
-      <button className="inline-add-customer" type="button" onClick={() => { setShowNewCustomer(!showNewCustomer); setCustomerError(""); }}><Plus size={13} />{showNewCustomer ? "Cancel new customer" : "New customer"}</button>
-      {showNewCustomer && <div className="inline-customer-form">
-        <div className="inline-customer-heading"><UserRound size={15} /><strong>Quick add customer</strong></div>
-        <div className="inline-customer-grid">
-          <input aria-label="New customer name" placeholder="Customer name *" value={newCustomer.name} onChange={(event) => setNewCustomer({ ...newCustomer, name: event.target.value })} />
-          <input aria-label="New customer phone" type="tel" placeholder="Phone number 1 *" value={newCustomer.phone} onChange={(event) => setNewCustomer({ ...newCustomer, phone: event.target.value })} />
-          <input aria-label="New customer second phone" type="tel" placeholder="Phone number 2 (optional)" value={newCustomer.phone2} onChange={(event) => setNewCustomer({ ...newCustomer, phone2: event.target.value })} />
-          <input aria-label="New customer address" placeholder="Area / street address *" value={newCustomer.address} onChange={(event) => setNewCustomer({ ...newCustomer, address: event.target.value })} />
-          <input aria-label="New customer city" list="customer-cities" placeholder="City: select or type *" value={newCustomer.city} onChange={(event) => setNewCustomer({ ...newCustomer, city: event.target.value })} />
-          <CityOptions />
-          <input aria-label="New customer CNIC" placeholder="CNIC (optional)" value={newCustomer.cnic} onChange={(event) => setNewCustomer({ ...newCustomer, cnic: event.target.value })} />
-        </div>
-        {customerError && <p className="form-error" role="alert">{customerError}</p>}
-        <button className="button button-outline inline-save-customer" type="button" onClick={createCustomer}><Check size={13} />Save & select customer</button>
-      </div>}
+    <div className="booking-customer-field field-full">
+      <Field label="Customer name *"><input name="customerName" value={customerDetails.name} onChange={(event) => setCustomerDetails({ ...customerDetails, name: event.target.value })} placeholder="Customer name" required /></Field>
+      <Field label="Phone number 1 *"><input name="customerPhone" type="tel" value={customerDetails.phone} onChange={(event) => setCustomerDetails({ ...customerDetails, phone: event.target.value })} placeholder="Phone number" required /></Field>
+      <Field label="Phone number 2 (optional)"><input name="customerPhone2" type="tel" value={customerDetails.phone2} onChange={(event) => setCustomerDetails({ ...customerDetails, phone2: event.target.value })} placeholder="Optional" /></Field>
+      <Field label="Address *" className="field-full"><input name="customerAddress" value={customerDetails.address} onChange={(event) => setCustomerDetails({ ...customerDetails, address: event.target.value })} placeholder="Customer address" required /></Field>
     </div>
-    <Field label="Booking date"><DateInput value={booking?.bookingDate || today} readOnly /></Field>
-    {!hideMeasurements && <div className="booking-measurements field-full"><strong>Customer measurements <span>(optional · inches)</span></strong><div><Field label="Chest"><input name="chest" type="number" min="0" step="0.1" defaultValue={booking?.chest || ""} placeholder="Chest size" /></Field><Field label="Back"><input name="back" type="number" min="0" step="0.1" defaultValue={booking?.back || ""} placeholder="Back size" /></Field><Field label="Hip"><input name="hip" type="number" min="0" step="0.1" defaultValue={booking?.hip || ""} placeholder="Hip size" /></Field></div></div>}
     <Field label="Delivery date *"><DateInput name="delivery" ariaLabel="Delivery date" min={booking ? undefined : today} value={deliveryDate} onChange={setDeliveryDate} required /></Field>
     <Field label="Expected return date *"><DateInput name="returnDate" ariaLabel="Expected return date" min={deliveryDate || (booking ? undefined : today)} value={returnDate} onChange={setReturnDate} required /></Field>
     <Field label="Agreed rental price (PKR) *"><input type="number" name="amount" min="1" placeholder="Enter rental price" value={amount} onChange={(event) => setAmount(event.target.value)} required />
@@ -1590,7 +1666,15 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
     <Field label={booking ? "Advance received (PKR)" : "Advance payment (PKR)"}><input type="number" name="paid" min="0" value={paid} onChange={(event) => setPaid(event.target.value)} readOnly={Boolean(booking)} />{booking && <small className="suggested-price">Payments are managed from the Payments page.</small>}</Field>
     {!booking && <Field label="Payment method"><select name="method"><option>Cash</option><option>Bank transfer</option><option>JazzCash</option><option>Easypaisa</option></select></Field>}
     <div className="booking-balance field-full"><span>Total rental <strong>{currency(amount)}</strong></span><span>Balance after advance <strong>{currency(Math.max(Number(amount || 0) - Number(paid || 0), 0))}</strong></span></div>
+    {!hideMeasurements && <div className="booking-measurements field-full"><strong>Customer measurements <span>(optional · inches)</span></strong><div><Field label="Chest"><input name="chest" type="number" min="0" step="0.1" defaultValue={booking?.chest || ""} placeholder="Chest size" /></Field><Field label="Back"><input name="back" type="number" min="0" step="0.1" defaultValue={booking?.back || ""} placeholder="Back size" /></Field><Field label="Hip"><input name="hip" type="number" min="0" step="0.1" defaultValue={booking?.hip || ""} placeholder="Hip size" /></Field></div></div>}
     <Field label="Special instructions" className="field-full"><textarea name="notes" rows="2" defaultValue={booking?.notes || ""} placeholder="Fitting notes, alterations, or other details..." /></Field>
+    <section className="booking-jewellery-section field-full" aria-label="Jewellery set selection">
+      <strong>Jewellery sets <span>Optional — book alone or with an outfit.</span></strong>
+      {jewellerySets.length
+        ? <div className="booking-article-options">{jewellerySets.map((article) => <BookingArticleOption key={article.id} article={article} selected={selectedArticleIds.includes(article.id)} onToggle={toggleArticle} icon={Gem} />)}</div>
+        : <p className="booking-article-empty">No jewellery sets available. Add a Jewellery Set article to your collection.</p>}
+      {onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={() => onAddArticle("Jewellery Set")}>Add jewellery set</Button>}
+    </section>
     <div className="form-hint field-full"><ShieldCheck size={15} /><span>Availability is checked against existing reservations before confirming.</span></div>
     <div className="modal-actions"><Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={booking ? Check : CalendarDays}>{booking ? "Save changes" : "Confirm booking"}</Button></div>
   </form>;
@@ -1626,27 +1710,18 @@ function CityOptions() {
   return <datalist id="customer-cities">{["Lahore", "Karachi", "Islamabad", "Rawalpindi", "Faisalabad", "Multan", "Peshawar", "Quetta", "Sialkot", "Gujranwala", "Sheikhupura", "Gujrat", "Bahawalpur", "Sargodha", "Hyderabad"].map((city) => <option value={city} key={city} />)}</datalist>;
 }
 
-function ArticleForm({ articles, article, initialCategory, onSubmit, onCancel, onSaved, onDelete, isAdmin = true }) {
+function ArticleForm({ article, initialCategory, onSubmit, onCancel, onSaved, onDelete, isAdmin = true }) {
   const [category, setCategory] = useState(article?.category || initialCategory || "");
-  const [articleNumber, setArticleNumber] = useState(article?.id || (category === "Bridal Wear" ? nextBridalArticleNumber(articles) : ""));
   const [photo, setPhoto] = useState(article?.photo || "");
-  const [priceMin, setPriceMin] = useState(String(article?.priceMin ?? (article ? Math.max(0, article.price - 500) : "")));
-  const [priceMax, setPriceMax] = useState(String(article?.priceMax ?? (article ? article.price + 500 : "")));
+  const [priceMin, setPriceMin] = useState(String(article?.priceMin ?? article?.price ?? ""));
   const submit = (event) => {
     const savedArticle = onSubmit(event, article?.id || null);
     if (savedArticle && !article) onSaved?.(savedArticle);
   };
   return <form className="form-grid" onSubmit={submit}>
-    <Field label="Article number *"><input name="id" value={articleNumber} onChange={(event) => setArticleNumber(event.target.value)} readOnly={Boolean(article) || category === "Bridal Wear"} placeholder={category === "Bridal Wear" ? "Auto-generated" : "e.g. DRB-BRT-032"} required /></Field>
     <Field label="Article name *"><input name="name" defaultValue={article?.name || ""} placeholder="e.g. Rose Gold Bridal Lehnga" required /></Field>
-    <Field label="Category *"><select name="category" required value={category} onChange={(event) => {
-      const nextCategory = event.target.value;
-      setCategory(nextCategory);
-      if (!article) setArticleNumber(nextCategory === "Bridal Wear" ? nextBridalArticleNumber(articles) : "");
-    }}><option value="" disabled>Select category</option>{categoriesForArticles(article ? [article] : []).map((categoryOption) => <option key={categoryOption}>{categoryOption}</option>)}</select></Field>
-    <Field label="Availability"><select name="status" defaultValue={article?.status || "Available"}><option>Available</option><option>Booked</option><option>Maintenance</option></select></Field>
+    <Field label="Category *"><select name="category" required value={category} onChange={(event) => setCategory(event.target.value)}><option value="" disabled>Select category</option>{categoriesForArticles(article ? [article] : []).map((categoryOption) => <option key={categoryOption}>{categoryOption}</option>)}</select></Field>
     <Field label="Suggested rental minimum (PKR) *"><input name="priceMin" type="number" min="0" value={priceMin} onChange={(event) => setPriceMin(event.target.value)} placeholder="3000" required /></Field>
-    <Field label="Suggested rental maximum (PKR) *"><input name="priceMax" type="number" min="0" value={priceMax} onChange={(event) => setPriceMax(event.target.value)} placeholder="5000" required /></Field>
     <Field label="Minimum order price (PKR) *"><input name="minOrder" type="number" min="0" defaultValue={article?.minOrder ?? ""} placeholder="20000" required /></Field>
     <PhotoUpload value={photo} onChange={setPhoto} />
     <input className="form-hidden" type="hidden" name="photoData" value={photo} readOnly />
