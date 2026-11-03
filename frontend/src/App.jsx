@@ -87,7 +87,7 @@ if (typeof window !== "undefined" && localStorage.getItem("drb-data-version") !=
   localStorage.setItem("drb-data-version", workspaceDataVersion);
 }
 const readableDate = (value) => value
-  ? new Date(`${value}T00:00:00`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+  ? new Date(`${value}T00:00:00`).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" })
   : "—";
 
 const navGroups = [
@@ -192,8 +192,8 @@ function Status({ children }) {
   return <span className={`status status-${className}`}><i />{children}</span>;
 }
 
-function Button({ children, variant = "primary", icon: Icon, onClick, type = "button", ...props }) {
-  return <button type={type} className={`button button-${variant}`} onClick={onClick} {...props}>
+function Button({ children, variant = "primary", icon: Icon, onClick, type = "button", className = "", ...props }) {
+  return <button type={type} className={`button button-${variant} ${className}`.trim()} onClick={onClick} {...props}>
     {Icon && <Icon size={16} strokeWidth={2} />}{children}
   </button>;
 }
@@ -1517,8 +1517,8 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
   const [showNewCustomer, setShowNewCustomer] = useState(false);
   const [newCustomer, setNewCustomer] = useState({ name: "", phone: "", phone2: "", address: "", city: "", cnic: "" });
   const [customerError, setCustomerError] = useState("");
-  const [amount, setAmount] = useState(String(booking?.amount ?? 0));
-  const [paid, setPaid] = useState(String(booking?.paid ?? 0));
+  const [amount, setAmount] = useState(booking ? String(booking.amount ?? "") : "");
+  const [paid, setPaid] = useState(booking ? String(booking.paid ?? "") : "");
   useEffect(() => {
     if (!addedArticleId || selectedArticleIds.includes(addedArticleId)) return;
     const updatedIds = [...selectedArticleIds, addedArticleId];
@@ -1598,7 +1598,7 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
 
 function SaleForm({ onSubmit, onCancel }) {
   const [amount, setAmount] = useState("");
-  const [paid, setPaid] = useState("0");
+  const [paid, setPaid] = useState("");
   return <form className="form-grid sale-form" onSubmit={onSubmit}>
     <Field label="Sale date *"><input lang="en-GB" type="date" name="date" defaultValue={today} required /></Field>
     <Field label="Customer name *"><input name="customer" placeholder="Customer name" required /></Field>
