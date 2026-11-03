@@ -32,6 +32,10 @@ export function DateInput({ name, value = "", onChange, min, required = false, r
     const isoValue = displayToIsoDate(nextValue);
     if ((isoValue && (!min || isoValue >= min)) || !nextValue) onChange?.(isoValue);
   };
+  const openPicker = () => {
+    if (typeof pickerRef.current?.showPicker === "function") pickerRef.current.showPicker();
+    else pickerRef.current?.click();
+  };
 
   return <div className={`date-input${readOnly ? " date-input-readonly" : ""}`}>
     <input
@@ -45,6 +49,7 @@ export function DateInput({ name, value = "", onChange, min, required = false, r
       title="Enter date as DD/MM/YYYY"
       required={required}
       readOnly={readOnly}
+      onClick={!readOnly ? openPicker : undefined}
       onChange={(event) => {
         const nextValue = event.target.value.replace(/[^\d/]/g, "").slice(0, 10);
         updateDisplay(nextValue);
@@ -59,10 +64,7 @@ export function DateInput({ name, value = "", onChange, min, required = false, r
       }}
     />
     {!readOnly && <>
-      <button type="button" className="date-picker-button" aria-label="Choose date" onClick={() => {
-        if (typeof pickerRef.current?.showPicker === "function") pickerRef.current.showPicker();
-        else pickerRef.current?.click();
-      }}><CalendarDays size={18} /></button>
+      <button type="button" className="date-picker-button" aria-label="Choose date" onClick={openPicker}><CalendarDays size={18} /></button>
       <input
         ref={pickerRef}
         className="native-date-picker"

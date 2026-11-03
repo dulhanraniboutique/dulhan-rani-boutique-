@@ -81,6 +81,12 @@ const bookingArticleRecords = (booking, inventory) => {
     };
   });
 };
+const deliveryPrepBookings = (bookings, articles, dateRange) => bookings
+  .filter((booking) => booking.delivery >= dateRange.from
+    && booking.delivery <= dateRange.to
+    && !["Out", "Returned", "Cancelled"].includes(booking.status))
+  .map((booking) => ({ ...booking, deliveryArticles: bookingArticleRecords(booking, articles) }))
+  .sort((left, right) => left.delivery.localeCompare(right.delivery) || left.customer.localeCompare(right.customer));
 const bookingHasJewellerySet = (booking, inventory) => bookingArticleRecords(booking, inventory)
   .some((article) => article.category === "Jewellery Set");
 const dateAfter = (date, days) => {
@@ -507,10 +513,7 @@ function ReturnsPage({ bookings, onReturn, onStatusChange, onRecordPayment }) {
 }
 
 function TomorrowDeliveriesPage({ bookings, articles, dateRange, onRangeChange, onToggleReady }) {
-  const deliveries = bookings
-    .filter((booking) => booking.delivery >= dateRange.from && booking.delivery <= dateRange.to && !["Out", "Returned", "Cancelled"].includes(booking.status))
-    .map((booking) => ({ ...booking, deliveryArticles: bookingArticleRecords(booking, articles) }))
-    .sort((left, right) => left.delivery.localeCompare(right.delivery) || left.customer.localeCompare(right.customer));
+  const deliveries = deliveryPrepBookings(bookings, articles, dateRange);
   const dressCount = deliveries.reduce((sum, booking) => sum + booking.deliveryArticles.length, 0);
   const readyCount = deliveries.reduce((sum, booking) => sum + booking.deliveryArticles.filter((article) => booking.prepReadyArticleIds?.includes(article.id)).length, 0);
   const printList = () => {
@@ -979,6 +982,7 @@ export default function App() {
   const setModal = (next, { replace = false } = {}) => {
     const resolved = typeof next === "function" ? next(modalRef.current) : next;
     if (!resolved) {
+      if (modalRef.current?.type === "booking") setBookingDraft(null);
       if (modalRef.current && window.history.state?.drbApp && window.history.state.modalId) {
         window.history.back();
       } else {
@@ -997,6 +1001,7 @@ export default function App() {
     setModalState(resolved);
   };
   const [quickCreatedArticleId, setQuickCreatedArticleId] = useState("");
+  const [bookingDraft, setBookingDraft] = useState(null);
   const [toast, setToast] = useState("");
   const toastTimer = useRef(null);
   const [mobileNav, setMobileNav] = useState(false);
@@ -1010,6 +1015,7 @@ export default function App() {
     const handlePopState = (event) => {
       const state = event.state;
       if (state?.drbApp) {
+        if (modalRef.current?.type === "booking" && !state.modalId) setBookingDraft(null);
         if (activeModalHistoryIdRef.current && activeModalHistoryIdRef.current !== state.modalId) {
           modalHistoryRef.current.delete(activeModalHistoryIdRef.current);
         }
@@ -1226,7 +1232,10 @@ export default function App() {
     || (configuredNotifications.payments && paymentAlerts.length)
     || (configuredNotifications.bookings && bookingAlerts.length);
   const nav = (page) => {
-    if (page === "new-booking") setModal({ type: "booking" });
+    if (page === "new-booking") {
+      setBookingDraft(null);
+      setModal({ type: "booking" });
+    }
     else {
       const nextPage = page === "today-deliveries" ? "tomorrow" : page;
       if (page === "today-deliveries") {
@@ -1540,6 +1549,7 @@ export default function App() {
       receivedBy: currentProfile.name,
       receivedById: currentUserId,
     }, ...payments]);
+    setBookingDraft(null);
     setModal({ type: "booking-detail", booking: nextBooking }, { replace: true });
     notify(`Booking ${nextBooking.id} created successfully.`);
   };
@@ -1694,9 +1704,8 @@ export default function App() {
     ? booking.createdById === currentUserId
     : (booking.createdBy || booking.staff) === currentProfile.name);
   const pendingApprovalCount = approvalRequests.filter((item) => item.status === "Pending").length;
-  const deliveryPrepCount = bookings
-    .filter((booking) => booking.delivery === today && !["Out", "Returned", "Cancelled"].includes(booking.status))
-    .reduce((count, booking) => count + bookingArticleRecords(booking, articles).length, 0);
+  const deliveryPrepCount = deliveryPrepBookings(bookings, articles, prepDateRange)
+    .reduce((count, booking) => count + booking.deliveryArticles.length, 0);
   const content = (() => {
     if (activePage === "approvals" && role === "admin") {
       return <ApprovalsPage requests={approvalRequests} error={approvalError} onReview={decideApproval} />;
@@ -1750,8 +1759,8 @@ export default function App() {
     {modal?.type === "article-edit" && <Modal title="Edit article" description="Update article details or replace and crop its photo." onClose={() => setModal(null)}>
       <ArticleForm article={modal.article} onSubmit={handleArticleSubmit} onCancel={() => setModal(null)} onDelete={handleArticleDelete} isAdmin={role === "admin"} />
     </Modal>}
-    {modal?.type === "booking" && <Modal title="Create a booking" onClose={() => setModal(null)} wide>
-      <BookingForm articles={articles} customers={customers} onSubmit={handleBookingSubmit} onCancel={() => setModal(null)} onAddArticle={(category) => setModal({ type: "booking-article", quickArticleCategory: category })} addedArticleId={quickCreatedArticleId} onAddedArticleHandled={() => setQuickCreatedArticleId("")} />
+    {modal?.type === "booking" && <Modal title="Create a booking" onClose={() => { setBookingDraft(null); setModal(null); }} wide>
+      <BookingForm draft={bookingDraft} articles={articles} customers={customers} onSubmit={handleBookingSubmit} onCancel={() => { setBookingDraft(null); setModal(null); }} onAddArticle={(category, draft) => { setBookingDraft(draft); setModal({ type: "booking-article", quickArticleCategory: category }); }} addedArticleId={quickCreatedArticleId} onAddedArticleHandled={() => setQuickCreatedArticleId("")} />
     </Modal>}
     {modal?.type === "sale" && <Modal title="Record a sale" description="Record a sale without rental dates or measurements." onClose={() => setModal(null)}>
       <SaleForm onSubmit={handleSaleSubmit} onCancel={() => setModal(null)} />
@@ -1804,11 +1813,11 @@ export default function App() {
   </div>;
 }
 
-function BookingForm({ booking, articles, customers, onSubmit, onCancel, onAddArticle, addedArticleId, onAddedArticleHandled }) {
-  const [selectedArticleIds, setSelectedArticleIds] = useState(booking ? bookingArticleIds(booking) : []);
+function BookingForm({ booking, draft, articles, customers, onSubmit, onCancel, onAddArticle, addedArticleId, onAddedArticleHandled }) {
+  const [selectedArticleIds, setSelectedArticleIds] = useState(booking ? bookingArticleIds(booking) : draft?.selectedArticleIds || []);
   const selectedArticles = articles.filter((item) => selectedArticleIds.includes(item.id));
   const jewelleryOnly = selectedArticles.length > 0 && selectedArticles.every((item) => item.category === "Jewellery Set");
-  const [deliveryDate, setDeliveryDate] = useState(booking?.delivery || "");
+  const [deliveryDate, setDeliveryDate] = useState(booking?.delivery || draft?.delivery || "");
   const [articleCategory, setArticleCategory] = useState("All categories");
   const [articleSearch, setArticleSearch] = useState("");
   const categories = categoriesForArticles(articles);
@@ -1828,27 +1837,48 @@ function BookingForm({ booking, articles, customers, onSubmit, onCancel, onAddAr
   };
   const previousCustomer = booking && customers.find((customer) => customer.id === booking.customerId || customer.name === booking.customer);
   const [customerDetails, setCustomerDetails] = useState({
-    name: booking?.customer || "",
-    phone: booking?.phone || previousCustomer?.phone || "",
-    phone2: booking?.phone2 || previousCustomer?.phone2 || "",
-    address: booking?.address || previousCustomer?.address || "",
+    name: draft?.customerDetails?.name ?? booking?.customer ?? "",
+    phone: draft?.customerDetails?.phone ?? booking?.phone ?? previousCustomer?.phone ?? "",
+    phone2: draft?.customerDetails?.phone2 ?? booking?.phone2 ?? previousCustomer?.phone2 ?? "",
+    address: draft?.customerDetails?.address ?? booking?.address ?? previousCustomer?.address ?? "",
   });
-  const [amount, setAmount] = useState(booking ? String(booking.amount ?? "") : "");
-  const [paid, setPaid] = useState(booking ? String(booking.paid ?? "") : "");
-  const [returnDate, setReturnDate] = useState(booking?.returnDate || "");
+  const [amount, setAmount] = useState(booking ? String(booking.amount ?? "") : draft?.amount || "");
+  const [paid, setPaid] = useState(booking ? String(booking.paid ?? "") : draft?.paid || "");
+  const [returnDate, setReturnDate] = useState(booking?.returnDate || draft?.returnDate || "");
   useEffect(() => {
     if (!addedArticleId || selectedArticleIds.includes(addedArticleId)) return;
     const updatedIds = [...selectedArticleIds, addedArticleId];
     setSelectedArticleIds(updatedIds);
-    setAmount(String(articles.filter((item) => updatedIds.includes(item.id)).reduce((sum, item) => sum + item.price, 0)));
+    setAmount((current) => current || String(articles.filter((item) => updatedIds.includes(item.id)).reduce((sum, item) => sum + item.price, 0)));
     setArticleSearch("");
     onAddedArticleHandled();
   }, [addedArticleId]);
+  const preserveDraftAndAddArticle = (category, form) => {
+    const data = new FormData(form);
+    onAddArticle(category, {
+      selectedArticleIds: data.getAll("articles").map(String),
+      customerDetails: {
+        name: String(data.get("customerName") || ""),
+        phone: String(data.get("customerPhone") || ""),
+        phone2: String(data.get("customerPhone2") || ""),
+        address: String(data.get("customerAddress") || ""),
+      },
+      delivery: String(data.get("delivery") || ""),
+      returnDate: String(data.get("returnDate") || ""),
+      amount: String(data.get("amount") || ""),
+      paid: String(data.get("paid") || ""),
+      method: String(data.get("method") || "Cash"),
+      chest: String(data.get("chest") || ""),
+      back: String(data.get("back") || ""),
+      hip: String(data.get("hip") || ""),
+      notes: String(data.get("notes") || ""),
+    });
+  };
   return <form className="form-grid" noValidate onSubmit={(event) => onSubmit(event, booking?.id || null)}>
     <div className="booking-article-picker field-full">
       <Field label="Category"><select aria-label="Filter articles by category" value={articleCategory} onChange={(event) => setArticleCategory(event.target.value)}><option>All categories</option>{categories.filter((category) => category !== "Jewellery Set").map((category) => <option key={category}>{category}</option>)}</select></Field>
       <label className="booking-article-search"><Search size={15} /><input type="search" aria-label="Search articles for booking" placeholder="Type article name or number..." value={articleSearch} onChange={(event) => setArticleSearch(event.target.value)} /></label>
-      {onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={() => onAddArticle(articleCategory === "All categories" ? undefined : articleCategory)}>Add new article to collection</Button>}
+      {onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={(event) => preserveDraftAndAddArticle(articleCategory === "All categories" ? undefined : articleCategory, event.currentTarget.closest("form"))}>Add new article to collection</Button>}
       <div className="booking-article-options">{matchingArticles.map((article) => <BookingArticleOption key={article.id} article={article} selected={selectedArticleIds.includes(article.id)} onToggle={toggleArticle} />)}
       {matchingArticles.length === 0 && <p className="booking-article-empty">{articleSearch.trim() ? "No matching articles found." : "No available articles."}</p>}</div>
       {selectedArticles.length > 0 && <p className="booking-selected-count">{selectedArticles.length} article{selectedArticles.length === 1 ? "" : "s"} selected</p>}
@@ -1859,21 +1889,24 @@ function BookingForm({ booking, articles, customers, onSubmit, onCancel, onAddAr
       <Field label="Phone number 2 (optional)"><input name="customerPhone2" type="tel" inputMode="tel" autoComplete="tel-national" value={customerDetails.phone2} onChange={(event) => setCustomerDetails({ ...customerDetails, phone2: event.target.value })} placeholder="Optional" /></Field>
       <Field label="Address *" className="field-full"><input name="customerAddress" value={customerDetails.address} onChange={(event) => setCustomerDetails({ ...customerDetails, address: event.target.value })} placeholder="Customer address" required /></Field>
     </div>
-    <Field label="Delivery date *"><DateInput name="delivery" ariaLabel="Delivery date" min={booking ? undefined : today} value={deliveryDate} onChange={setDeliveryDate} required /></Field>
+    <Field label="Delivery date *"><DateInput name="delivery" ariaLabel="Delivery date" min={booking ? undefined : today} value={deliveryDate} onChange={(nextDate) => {
+      setDeliveryDate(nextDate);
+      setReturnDate(nextDate ? dateAfter(nextDate, 2) : "");
+    }} required /></Field>
     <Field label="Expected return date *"><DateInput name="returnDate" ariaLabel="Expected return date" min={deliveryDate || (booking ? undefined : today)} value={returnDate} onChange={setReturnDate} required /></Field>
     <Field label="Agreed rental price (PKR) *"><input type="number" name="amount" min="1" placeholder="Enter rental price" value={amount} onChange={(event) => setAmount(event.target.value)} required />
       {selectedArticles.length > 0 && <small className="suggested-price">Suggested total for {selectedArticles.length} article{selectedArticles.length === 1 ? "" : "s"}: {currency(selectedArticles.reduce((sum, item) => sum + item.price, 0))}</small>}</Field>
     <Field label={booking ? "Advance received (PKR)" : "Advance payment (PKR)"}><input type="number" name="paid" min="0" value={paid} onChange={(event) => setPaid(event.target.value)} readOnly={Boolean(booking)} />{booking && <small className="suggested-price">Payments are managed from the Payments page.</small>}</Field>
-    {!booking && <Field label="Payment method"><select name="method"><option>Cash</option><option>Bank transfer</option><option>JazzCash</option><option>Easypaisa</option></select></Field>}
+    {!booking && <Field label="Payment method"><select name="method" defaultValue={draft?.method || "Cash"}><option>Cash</option><option>Bank transfer</option><option>JazzCash</option><option>Easypaisa</option></select></Field>}
     <div className="booking-balance field-full"><span>Total rental <strong>{currency(amount)}</strong></span><span>Balance after advance <strong>{currency(Math.max(Number(amount || 0) - Number(paid || 0), 0))}</strong></span></div>
-    {!hideMeasurements && <div className="booking-measurements field-full"><strong>Customer measurements <span>(optional · inches)</span></strong><div><Field label="Chest"><input name="chest" type="number" min="0" step="0.1" defaultValue={booking?.chest || ""} placeholder="Chest size" /></Field><Field label="Back"><input name="back" type="number" min="0" step="0.1" defaultValue={booking?.back || ""} placeholder="Back size" /></Field><Field label="Hip"><input name="hip" type="number" min="0" step="0.1" defaultValue={booking?.hip || ""} placeholder="Hip size" /></Field></div></div>}
-    <Field label="Special instructions" className="field-full"><textarea name="notes" rows="2" defaultValue={booking?.notes || ""} placeholder="Fitting notes, alterations, or other details..." /></Field>
+    {!hideMeasurements && <div className="booking-measurements field-full"><strong>Customer measurements <span>(optional · inches)</span></strong><div><Field label="Chest"><input name="chest" type="number" min="0" step="0.1" defaultValue={booking?.chest ?? draft?.chest ?? ""} placeholder="Chest size" /></Field><Field label="Back"><input name="back" type="number" min="0" step="0.1" defaultValue={booking?.back ?? draft?.back ?? ""} placeholder="Back size" /></Field><Field label="Hip"><input name="hip" type="number" min="0" step="0.1" defaultValue={booking?.hip ?? draft?.hip ?? ""} placeholder="Hip size" /></Field></div></div>}
+    <Field label="Special instructions" className="field-full"><textarea name="notes" rows="2" defaultValue={booking?.notes ?? draft?.notes ?? ""} placeholder="Fitting notes, alterations, or other details..." /></Field>
     <section className="booking-jewellery-section field-full" aria-label="Jewellery set selection">
       <strong>Jewellery sets <span>Optional — book alone or with an outfit.</span></strong>
       {jewellerySets.length
         ? <div className="booking-article-options">{jewellerySets.map((article) => <BookingArticleOption key={article.id} article={article} selected={selectedArticleIds.includes(article.id)} onToggle={toggleArticle} icon={Gem} />)}</div>
         : <p className="booking-article-empty">No jewellery sets available. Add a Jewellery Set article to your collection.</p>}
-      {onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={() => onAddArticle("Jewellery Set")}>Add jewellery set</Button>}
+      {onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={(event) => preserveDraftAndAddArticle("Jewellery Set", event.currentTarget.closest("form"))}>Add jewellery set</Button>}
     </section>
     <div className="form-hint field-full"><ShieldCheck size={15} /><span>Availability is checked against existing reservations before confirming.</span></div>
     <div className="modal-actions"><Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={booking ? Check : CalendarDays}>{booking ? "Save changes" : "Confirm booking"}</Button></div>
