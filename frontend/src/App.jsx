@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowDownLeft, Bell, CalendarDays, Check, ChevronDown, ChevronLeft,
   ChevronRight, CircleDollarSign, Clock3, Download, FileText, LayoutDashboard,
-  Gem, LogOut, Menu, MoreHorizontal, Plus, Search, Settings, ShieldCheck, Shirt,
+  Gem, LogOut, Menu, MoreHorizontal, Plus, Search, Settings, ShieldCheck, Shirt, ShoppingCart,
   SlidersHorizontal, Sparkles, Users, Wallet, X, UserRound, Truck, LockKeyhole,
   RotateCcw, ChartNoAxesCombined, CreditCard, Eye, Pencil, AlertTriangle, Trash2,
 } from "lucide-react";
@@ -95,6 +95,7 @@ const navGroups = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "articles", label: "Articles", icon: Shirt, badge: "6" },
     { id: "bookings", label: "Bookings", icon: CalendarDays },
+    { id: "sales", label: "Sales", icon: ShoppingCart },
     { id: "jewellery-bookings", label: "Jewellery Set Booking", icon: Gem },
     { id: "customers", label: "Customers", icon: Users },
   ] },
@@ -197,10 +198,10 @@ function Button({ children, variant = "primary", icon: Icon, onClick, type = "bu
   </button>;
 }
 
-function PageHeader({ eyebrow, title, description, action, actionLabel, actionIcon: ActionIcon = Plus, onAction }) {
+function PageHeader({ eyebrow, title, description, action, actionLabel, actionIcon: ActionIcon = Plus, onAction, actionClassName = "" }) {
   return <div className="page-heading">
     <div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="page-description">{description}</p></div>
-    {action && <Button icon={ActionIcon} onClick={onAction}>{actionLabel}</Button>}
+    {action && <Button icon={ActionIcon} onClick={onAction} className={actionClassName}>{actionLabel}</Button>}
   </div>;
 }
 
@@ -234,7 +235,7 @@ function Dashboard({ articles, bookings, payments, role, profile, onNavigate }) 
   const maintenanceCount = articles.filter((item) => item.status === "Maintenance").length;
   return <>
     <PageHeader eyebrow={`${role === "admin" ? "ADMINISTRATOR" : "SALESPERSON"} OVERVIEW`} title={`Good morning, ${profile.name.split(" ")[0]} ✨`}
-      description="Here’s what’s happening at your boutique today." action actionLabel="Create booking" actionIcon={Plus} onAction={() => onNavigate("new-booking")} />
+      description="Here’s what’s happening at your boutique today." action actionLabel="Create booking" actionIcon={Plus} onAction={() => onNavigate("new-booking")} actionClassName="dashboard-create-booking" />
     <div className="welcome-strip">
       <div className="welcome-icon"><Sparkles size={21} /></div>
       <div><strong>Your boutique at a glance</strong><span>Stay on top of today’s fittings, deliveries and returns.</span></div>
@@ -346,12 +347,13 @@ function BookingsPage({ bookings, articles, query, onQueryChange, onNew, onView,
       <div className="toolbar-controls"><select value={filter} onChange={(event) => setFilter(event.target.value)}><option>All bookings</option><option>Confirmed</option><option>Out</option><option>Returned</option></select>
         <Button variant="outline" icon={Download} onClick={() => window.print()}>Export</Button></div></div>
     <section className="booking-date-filter-panel"><div><strong>Filter bookings by delivery date</strong><span>Select a date to show its bookings and the following day.</span></div><label><CalendarDays size={16} /><input aria-label="Filter bookings from selected delivery date through next day" lang="en-GB" type="date" value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} /></label>{deliveryDate && <><span className="booking-date-range">Showing {readableDate(deliveryDate)} – {readableDate(dateAfter(deliveryDate, 1))}</span><Button variant="outline" onClick={() => setDeliveryDate("")}>Clear date</Button></>}</section>
-    <section className="panel table-panel"><div className="table-scroll"><table><thead><tr><th>BOOKING DATE</th><th>BOOKING ID</th><th>CUSTOMER</th><th>ARTICLES</th><th>DELIVERY</th><th>RETURN</th><th>CREATED BY</th><th>AMOUNT / DUE</th><th>STATUS</th><th></th></tr></thead>
+    <section className="panel table-panel"><div className="table-scroll"><table><thead><tr><th>BOOKING DATE</th><th>BOOKING ID</th><th>CUSTOMER</th><th>BILL</th><th>ARTICLES</th><th>DELIVERY</th><th>RETURN</th><th>CREATED BY</th><th>AMOUNT / DUE</th><th>STATUS</th><th></th></tr></thead>
       <tbody>{filtered.map((booking) => <tr key={booking.id} onClick={() => onView(booking)} className="clickable-row">
         <td>{readableDate(booking.bookingDate)}</td><td className="strong-cell">{booking.id}</td><td><strong>{booking.customer}</strong><small className="sub-cell">{booking.phone}</small></td>
+        <td><button className="booking-receipt-action" onClick={(event) => { event.stopPropagation(); onView(booking); }} aria-label={`View bill for booking ${booking.id}`}><Eye size={15} /><span>View bill</span></button></td>
         <td><span className="article-id">{bookingArticleLabels(booking)}</span><small className="sub-cell">{bookingArticleTitles(booking)}</small></td><td>{readableDate(booking.delivery)}</td><td>{readableDate(booking.returnDate)}</td><td>{booking.createdBy || booking.staff || "—"}</td>
         <td><strong>{currency(booking.amount)}</strong><small className="sub-cell">{booking.amount > booking.paid ? `${currency(booking.amount - booking.paid)} due` : "Paid"}</small></td>
-        <td><Status>{booking.status}</Status></td><td><div className="booking-row-actions"><button className="icon-button" onClick={(event) => { event.stopPropagation(); onView(booking); }} aria-label="View booking"><Eye size={16} /></button>
+        <td><Status>{booking.status}</Status></td><td><div className="booking-row-actions">
           {booking.status === "Confirmed" && (booking.amount > booking.paid
             ? <Button variant="small" icon={Wallet} onClick={(event) => { event.stopPropagation(); onRecordPayment(booking); }}>Receive balance</Button>
             : <Button variant="small" icon={Truck} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Out"); }}>Mark picked up</Button>)}
@@ -359,6 +361,20 @@ function BookingsPage({ bookings, articles, query, onQueryChange, onNew, onView,
           {booking.status === "Out" && booking.amount > booking.paid && <Button variant="small" icon={Wallet} onClick={(event) => { event.stopPropagation(); onRecordPayment(booking); }}>Receive balance</Button>}
           {isAdmin && <><button className="icon-button" onClick={(event) => { event.stopPropagation(); onEdit(booking); }} aria-label={`Edit booking ${booking.id}`}><Pencil size={15} /></button><button className="icon-button booking-delete-button" onClick={(event) => { event.stopPropagation(); onDelete(booking); }} aria-label={`Delete booking ${booking.id}`}><Trash2 size={15} /></button></>}</div></td></tr>)}</tbody></table>
       {filtered.length === 0 && <EmptyState title={jewelleryOnly ? "No jewellery set bookings found" : "No bookings found"} detail={jewelleryOnly ? "Bookings with a jewellery set will appear here." : "Try another search or add your first booking."} />}</div></section>
+  </>;
+}
+
+function SalesPage({ sales, query, onQueryChange, onNew }) {
+  const filtered = sales.filter((sale) => `${sale.id} ${sale.customer} ${sale.itemDescription}`.toLowerCase().includes(query.toLowerCase()));
+  const total = filtered.reduce((sum, sale) => sum + Number(sale.amount || 0), 0);
+  const received = filtered.reduce((sum, sale) => sum + Number(sale.paid || 0), 0);
+  return <>
+    <PageHeader eyebrow="RETAIL SALES" title="Sales" description="Record and review boutique sales separately from rental bookings." action actionLabel="Record sale" actionIcon={Plus} onAction={onNew} />
+    <div className="booking-stats"><MiniMetric label="Sales total" value={currency(total)} /><MiniMetric label="Received" value={currency(received)} tone="green" /><MiniMetric label="Balance due" value={currency(Math.max(total - received, 0))} tone="orange" /><MiniMetric label="Transactions" value={filtered.length} tone="plum" /></div>
+    <div className="toolbar"><div className="toolbar-search"><Search size={16} /><input placeholder="Search sale, customer or item..." value={query} onChange={(event) => onQueryChange(event.target.value)} /></div></div>
+    <section className="panel table-panel"><div className="table-scroll"><table><thead><tr><th>DATE</th><th>SALE ID</th><th>CUSTOMER</th><th>ITEM / DESCRIPTION</th><th>AMOUNT</th><th>PAID</th><th>BALANCE</th><th>SOLD BY</th></tr></thead>
+      <tbody>{filtered.map((sale) => <tr key={sale.id}><td>{readableDate(sale.date)}</td><td className="strong-cell">{sale.id}</td><td><strong>{sale.customer}</strong><small className="sub-cell">{sale.phone || "—"}</small></td><td>{sale.itemDescription}</td><td>{currency(sale.amount)}</td><td>{currency(sale.paid)}</td><td>{currency(Math.max(Number(sale.amount) - Number(sale.paid), 0))}</td><td>{sale.createdBy || "—"}</td></tr>)}</tbody>
+      </table>{filtered.length === 0 && <EmptyState title="No sales found" detail={query ? "Try another search or record a new sale." : "Your recorded sales will appear here."} />}</div></section>
   </>;
 }
 
@@ -804,6 +820,7 @@ export default function App() {
   const [customers, setCustomers] = useSyncedData("customers", seedCustomers, Boolean(session));
   const [bookings, setBookings] = useSyncedData("bookings", seedBookings, Boolean(session));
   const [payments, setPayments] = useSyncedData("payments", seedPayments, Boolean(session));
+  const [sales, setSales] = useSyncedData("sales", [], Boolean(session));
   const [workspaceSettings, setWorkspaceSettings] = useSyncedData("settings", [], Boolean(session));
   const businessSettings = workspaceSettings.find((item) => item.id === "business")?.value || defaultBusinessSettings;
   const notificationSettings = workspaceSettings.find((item) => item.id === "notifications")?.value || defaultNotificationSettings;
@@ -966,7 +983,7 @@ export default function App() {
   const currentProfile = session?.role === "sales" ? activeSalesperson || profile : profile;
   const currentUserId = role === "admin" ? "admin" : session.id;
   const pageTitles = {
-    dashboard: "Dashboard", articles: "Articles", bookings: role === "admin" ? "Bookings" : "My bookings", customers: "Customers",
+    dashboard: "Dashboard", articles: "Articles", bookings: role === "admin" ? "Bookings" : "My bookings", sales: "Sales", customers: "Customers",
     "jewellery-bookings": "Jewellery Set Booking",
     payments: role === "admin" ? "Payments" : "Payments received", returns: "Returns & tracking", tomorrow: "Delivery prep", calendar: "Calendar", reports: "Reports",
     staff: "Staff & roles", settings: "Settings", profile: "My profile",
@@ -1232,6 +1249,32 @@ export default function App() {
     setModal({ type: "booking-detail", booking: nextBooking }, { replace: true });
     notify(`Booking ${nextBooking.id} created successfully.`);
   };
+  const handleSaleSubmit = (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const amount = Number(form.get("amount"));
+    const paid = Number(form.get("paid"));
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(paid) || paid < 0 || paid > amount) {
+      notify("Enter a valid sale amount and payment not greater than the total.");
+      return;
+    }
+    const sale = {
+      id: createRecordId("SALE"),
+      date: form.get("date"),
+      customer: form.get("customer").trim(),
+      phone: form.get("phone").trim(),
+      itemDescription: form.get("itemDescription").trim(),
+      amount,
+      paid,
+      method: form.get("method"),
+      notes: form.get("notes").trim(),
+      createdBy: currentProfile.name,
+      createdById: currentUserId,
+    };
+    setSales((current) => [sale, ...current]);
+    setModal(null);
+    notify(`Sale ${sale.id} recorded successfully.`);
+  };
   const handleBookingDelete = (booking) => {
     if (role !== "admin") { notify("Only an administrator can delete bookings."); return; }
     const linkedPayments = payments.filter((payment) => payment.booking === booking.id).length;
@@ -1352,6 +1395,7 @@ export default function App() {
     switch (activePage) {
       case "articles": return <ArticlesPage articles={articles} query={filteredQuery} onQueryChange={setQuery} onAdd={openArticleModal} onEdit={openEditArticle} />;
       case "bookings": return <BookingsPage bookings={bookings} articles={articles} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} />;
+      case "sales": return <SalesPage sales={sales} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "sale" })} />;
       case "jewellery-bookings": return <BookingsPage bookings={bookings} articles={articles} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} jewelleryOnly />;
       case "customers": return <CustomersPage customers={customers} query={filteredQuery} onQueryChange={setQuery} onAdd={openCustomerModal} />;
       case "payments": return <PaymentsPage payments={payments} bookings={bookings} query={filteredQuery} onQueryChange={setQuery} onAdd={openPaymentModal} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} salespeople={salespeople} adminProfile={profile} />;
@@ -1377,7 +1421,7 @@ export default function App() {
       <div className="sidebar-bottom"><div className="support-card"><span className="support-sparkle"><Sparkles size={16} /></span><strong>Need a hand?</strong><span>We’re here to help you get started.</span><button onClick={() => notify("Help center will be available soon.")}>Visit help center <ChevronRight size={14} /></button></div><button className="sidebar-profile" onClick={() => nav("profile")}><span className="avatar avatar-plum">{currentProfile.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span><span><strong>{currentProfile.name}</strong><small>{role === "admin" ? "Administrator" : "Salesperson"}</small></span><MoreHorizontal size={17} /></button></div>
     </aside>
     <main className="main-area"><header className="topbar"><div className="topbar-left"><button className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="Open menu"><Menu size={21} /></button><div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>{pageTitles[activePage]}</strong></div></div>
-      <div className="topbar-right"><label className="global-search"><Search size={16} /><input placeholder="Search anything..." value={query} onChange={(event) => setQuery(event.target.value)} /><kbd>⌘ K</kbd></label>
+      <div className="topbar-right"><Button icon={Plus} onClick={() => nav("new-booking")} className="topbar-create-booking" aria-label="Create booking"><span>Create Booking</span></Button><label className="global-search"><Search size={16} /><input placeholder="Search anything..." value={query} onChange={(event) => setQuery(event.target.value)} /><kbd>⌘ K</kbd></label>
         <div className="notification-wrap"><button className="icon-button notification-button" aria-label="Notifications" onClick={() => setNotificationsOpen(!notificationsOpen)}><Bell size={18} />{hasNotifications && <i />}</button>
           {notificationsOpen && <div className="notification-popover"><strong>Notifications</strong>
             {configuredNotifications.returns && returnAlerts.slice(0, 3).map((booking) => <div key={`return-${booking.id}`}><span className="notification-dot" /><p><b>Return due or overdue</b><small>{bookingArticleTitles(booking) || booking.id} · {booking.customer}</small></p></div>)}
@@ -1396,6 +1440,9 @@ export default function App() {
     </Modal>}
     {modal?.type === "booking" && <Modal title="Create a booking" description="Reserve an article and capture the rental details." onClose={() => setModal(null)} wide>
       <BookingForm articles={articles} customers={customers} onCreateCustomer={handleBookingCustomerCreate} onSubmit={handleBookingSubmit} onCancel={() => setModal(null)} onAddArticle={(category) => setModal({ ...modal, quickArticle: true, quickArticleCategory: category })} addedArticleId={quickCreatedArticleId} onAddedArticleHandled={() => setQuickCreatedArticleId("")} />
+    </Modal>}
+    {modal?.type === "sale" && <Modal title="Record a sale" description="Record a sale without rental dates or measurements." onClose={() => setModal(null)}>
+      <SaleForm onSubmit={handleSaleSubmit} onCancel={() => setModal(null)} />
     </Modal>}
     {modal?.type === "booking" && modal.quickArticle && <Modal title="Add an article" description="Create an inventory article, then it will be selected in this booking." onClose={() => window.history.back()}>
       <ArticleForm articles={articles} initialCategory={modal.quickArticleCategory} onSubmit={(event) => handleArticleSubmit(event, null, false)} onSaved={(article) => { setQuickCreatedArticleId(article.id); window.history.back(); }} onCancel={() => window.history.back()} />
@@ -1546,6 +1593,23 @@ function BookingForm({ booking, articles, customers, onCreateCustomer, onSubmit,
     <Field label="Special instructions" className="field-full"><textarea name="notes" rows="2" defaultValue={booking?.notes || ""} placeholder="Fitting notes, alterations, or other details..." /></Field>
     <div className="form-hint field-full"><ShieldCheck size={15} /><span>Availability is checked against existing reservations before confirming.</span></div>
     <div className="modal-actions"><Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={booking ? Check : CalendarDays}>{booking ? "Save changes" : "Confirm booking"}</Button></div>
+  </form>;
+}
+
+function SaleForm({ onSubmit, onCancel }) {
+  const [amount, setAmount] = useState("");
+  const [paid, setPaid] = useState("0");
+  return <form className="form-grid sale-form" onSubmit={onSubmit}>
+    <Field label="Sale date *"><input lang="en-GB" type="date" name="date" defaultValue={today} required /></Field>
+    <Field label="Customer name *"><input name="customer" placeholder="Customer name" required /></Field>
+    <Field label="Phone number"><input name="phone" type="tel" placeholder="Optional" /></Field>
+    <Field label="Item / sale details *" className="field-full"><input name="itemDescription" placeholder="Describe the item or sale" required /></Field>
+    <Field label="Sale total (PKR) *"><input name="amount" type="number" min="1" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Enter sale total" required /></Field>
+    <Field label="Amount received (PKR)"><input name="paid" type="number" min="0" max={amount || undefined} value={paid} onChange={(event) => setPaid(event.target.value)} /></Field>
+    <Field label="Payment method"><select name="method"><option>Cash</option><option>Bank transfer</option><option>JazzCash</option><option>Easypaisa</option></select></Field>
+    <Field label="Notes" className="field-full"><textarea name="notes" rows="2" placeholder="Optional notes..." /></Field>
+    <div className="sale-balance-summary field-full"><span>Balance due</span><strong>{currency(Math.max(Number(amount || 0) - Number(paid || 0), 0))}</strong></div>
+    <div className="modal-actions"><Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={Check}>Save sale</Button></div>
   </form>;
 }
 

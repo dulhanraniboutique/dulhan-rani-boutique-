@@ -6,6 +6,7 @@ const collectionNames = [
   "bookings",
   "customers",
   "payments",
+  "sales",
   "settings",
   "accounts",
   "sessions",

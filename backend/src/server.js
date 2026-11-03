@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 const app = express();
 const port = Number(process.env.PORT) || 4000;
 const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-const resources = new Set(["articles", "bookings", "customers", "payments", "settings"]);
+const resources = new Set(["articles", "bookings", "customers", "payments", "sales", "settings"]);
 const pbkdf2 = promisify(derivePinHash);
 const pinIterations = 120000;
 let client;
@@ -184,6 +184,25 @@ async function checkSalesWriteAccess(resource, account, collection, upserts, del
     }
     if (upserts.some((item) => !Number.isFinite(Number(item.amount)) || Number(item.amount) <= 0)) {
       return "Payment amounts must be greater than zero.";
+    }
+  }
+  if (resource === "sales") {
+    const existing = await collection.find({ _id: { $in: upserts.map((item) => item.id) } }).toArray();
+    if (existing.length || deletes.length) return "Recorded sales cannot be changed after they are saved.";
+    if (upserts.some((item) => item.createdById !== account._id)) {
+      return "You can only record sales under your own profile.";
+    }
+    if (upserts.some((item) => !Number.isFinite(Number(item.amount))
+      || !Number.isFinite(Number(item.paid))
+      || Number(item.amount) <= 0
+      || Number(item.paid) < 0
+      || Number(item.paid) > Number(item.amount))) {
+      return "Sale totals and received amounts are invalid.";
+    }
+    if (upserts.some((item) => typeof item.customer !== "string" || !item.customer.trim()
+      || typeof item.itemDescription !== "string" || !item.itemDescription.trim()
+      || typeof item.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(item.date))) {
+      return "Sale customer, item details, or date are invalid.";
     }
   }
   return null;
@@ -475,13 +494,14 @@ app.get("/api/data/:resource", requireAuth, requireResourceAccess, async (reques
       return;
     }
 
-    const query = request.account.role === "sales"
-      ? request.params.resource === "bookings"
-        ? { createdById: request.account._id }
-        : request.params.resource === "payments"
-          ? { receivedById: request.account._id }
-          : {}
-      : {};
+    let query = {};
+    if (request.account.role === "sales") {
+      if (request.params.resource === "bookings" || request.params.resource === "sales") {
+        query = { createdById: request.account._id };
+      } else if (request.params.resource === "payments") {
+        query = { receivedById: request.account._id };
+      }
+    }
     const items = await (await connectToDatabase())
       .db(process.env.MONGODB_DB)
       .collection(request.params.resource)

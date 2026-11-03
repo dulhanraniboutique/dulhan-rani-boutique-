@@ -876,3 +876,30 @@ tbody tr:hover { background: #fdfbfc; }
   #root .modal :where(.field input,.field select,.field textarea,.booking-article-search input) { min-height: 44px; font-size: 14px; }
   #root .modal .modal-actions .button { min-height: 42px; font-size: 12px; }
 }
+
+.dashboard-create-booking { min-height: 48px; padding: 0 20px; font-size: 14px; font-weight: 700; }
+.topbar-create-booking { min-height: 36px; padding: 0 12px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.booking-receipt-action { display: inline-flex; min-height: 34px; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid #e8dbe2; border-radius: 6px; background: #fcf8fa; color: #71334f; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.booking-receipt-action:hover { border-color: #d7becb; background: #f5eaf0; }
+.sale-balance-summary { display: flex; align-items: center; justify-content: space-between; padding: 11px 12px; border-radius: 6px; background: #f8f2f5; color: #674154; font-size: 13px; font-weight: 600; }
+.sale-balance-summary strong { font-size: 15px; font-weight: 700; }
+.modal .form-grid .field > span { color: #54414a; font-size: 12px; font-weight: 700; }
+.modal .form-grid .field input,
+.modal .form-grid .field select,
+.modal .form-grid .field textarea { font-size: 14px; font-weight: 600; }
+
+@media (max-width: 650px) {
+  .topbar { gap: 6px; }
+  .topbar-right { min-width: 0; gap: 7px; }
+  .topbar-create-booking { width: 40px; min-width: 40px; height: 40px; padding: 0; border-radius: 8px; }
+  .topbar-create-booking span { display: none; }
+  .topbar-create-booking svg { width: 19px; height: 19px; }
+  .dashboard-create-booking { min-height: 44px; padding: 0 12px; font-size: 12px; }
+  .booking-receipt-action { min-height: 38px; padding: 0 10px; font-size: 12px; }
+  .sale-balance-summary { font-size: 14px; }
+  .sale-balance-summary strong { font-size: 16px; }
+  #root .modal .form-grid .field > span { font-size: 14px; font-weight: 700; }
+  #root .modal .form-grid .field input,
+  #root .modal .form-grid .field select,
+  #root .modal .form-grid .field textarea { font-size: 15px; font-weight: 600; }
+}
