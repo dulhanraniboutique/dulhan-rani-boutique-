@@ -1000,7 +1000,7 @@ export default function App() {
     if (!resolved) {
       if (modalRef.current?.type === "booking") {
         setBookingDraft(null);
-        setBookingPhoneError("");
+        setBookingFormError("");
       }
       if (modalRef.current && window.history.state?.drbApp && window.history.state.modalId) {
         window.history.back();
@@ -1021,7 +1021,7 @@ export default function App() {
   };
   const [quickCreatedArticleId, setQuickCreatedArticleId] = useState("");
   const [bookingDraft, setBookingDraft] = useState(null);
-  const [bookingPhoneError, setBookingPhoneError] = useState("");
+  const [bookingFormError, setBookingFormError] = useState("");
   const [toast, setToast] = useState("");
   const toastTimer = useRef(null);
   const [mobileNav, setMobileNav] = useState(false);
@@ -1437,6 +1437,7 @@ export default function App() {
   };
   const handleBookingSubmit = async (event, editingBookingId = null) => {
     event.preventDefault();
+    const showBookingError = (message) => setBookingFormError(message);
     const form = new FormData(event.currentTarget);
     const selectedIds = form.getAll("articles").map(String);
     const selectedArticles = articles.filter((item) => selectedIds.includes(item.id));
@@ -1448,21 +1449,20 @@ export default function App() {
       address: String(form.get("customerAddress") || "").trim(),
     };
     if (selectedArticles.length !== selectedIds.length) {
-      notify("Check the selected articles and try again.");
+      showBookingError("Check the selected articles and try again.");
       return;
     }
     if (!customerDetails.name || !customerDetails.phone || !customerDetails.address || (editingBookingId && !existing)) {
-      notify("Enter the customer name, phone number, and address.");
+      showBookingError("Enter the customer name, phone number, and address.");
       return;
     }
     const phoneError = validatePakistaniPhone(customerDetails.phone)
       || (customerDetails.phone2 ? validatePakistaniPhone(customerDetails.phone2) : "");
     if (phoneError) {
-      setBookingPhoneError(phoneError);
-      notify(phoneError);
+      showBookingError(phoneError);
       return;
     }
-    setBookingPhoneError("");
+    setBookingFormError("");
     const previousCustomer = existing && customers.find((item) => item.id === existing.customerId || item.name === existing.customer);
     const customer = {
       ...(previousCustomer || {}),
@@ -1478,11 +1478,11 @@ export default function App() {
       && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))
       && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
     if (!isIsoDate(delivery) || !isIsoDate(returnDate) || (!existing && delivery < today)) {
-      notify("Choose valid delivery and return dates using DD/MM/YYYY. New bookings cannot use past delivery dates.");
+      showBookingError("Choose valid delivery and return dates using DD/MM/YYYY. New bookings cannot use past delivery dates.");
       return;
     }
     if (returnDate < delivery) {
-      notify("Return date must be on or after the delivery date.");
+      showBookingError("Return date must be on or after the delivery date.");
       return;
     }
     const shouldCheckAvailability = !existing || !["Returned", "Cancelled"].includes(existing.status);
@@ -1491,14 +1491,14 @@ export default function App() {
         && delivery <= booking.returnDate && returnDate >= booking.delivery);
       return conflictingBooking ? [{ article, booking: conflictingBooking }] : [];
     })[0];
-    if (clash) { notify(`Date conflict: ${clash.article.id} is reserved for ${clash.booking.customer} until ${readableDate(clash.booking.returnDate)}.`); return; }
+    if (clash) { showBookingError(`Date conflict: ${clash.article.id} is reserved for ${clash.booking.customer} until ${readableDate(clash.booking.returnDate)}.`); return; }
     const amount = Number(form.get("amount")), paid = Number(form.get("paid"));
     if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(paid) || paid < 0) {
-      notify("Enter a rental amount greater than zero and a valid advance payment.");
+      showBookingError("Enter a rental amount greater than zero and a valid advance payment.");
       return;
     }
-    if (amount < paid) { notify("Rental amount cannot be less than the advance already paid."); return; }
-    if (existing && paid !== existing.paid) { notify("Payments must be changed from the Payments page."); return; }
+    if (amount < paid) { showBookingError("Rental amount cannot be less than the advance already paid."); return; }
+    if (existing && paid !== existing.paid) { showBookingError("Payments must be changed from the Payments page."); return; }
     const normalizedArticles = selectedArticles.map(({ id, name, photo, price, category }) => ({ id, name, photo, price, category }));
     const existingBooking = existing ? { ...existing } : {};
     delete existingBooking.event;
@@ -1778,8 +1778,8 @@ export default function App() {
     {modal?.type === "article-edit" && <Modal title="Edit article" description="Update article details or replace and crop its photo." onClose={() => setModal(null)}>
       <ArticleForm article={modal.article} onSubmit={handleArticleSubmit} onCancel={() => setModal(null)} onDelete={handleArticleDelete} isAdmin={role === "admin"} />
     </Modal>}
-    {modal?.type === "booking" && <Modal title="Create a booking" onClose={() => { setBookingDraft(null); setBookingPhoneError(""); setModal(null); }} wide>
-      <BookingForm draft={bookingDraft} phoneError={bookingPhoneError} onPhoneChange={() => setBookingPhoneError("")} articles={articles} customers={customers} onSubmit={handleBookingSubmit} onCancel={() => { setBookingDraft(null); setBookingPhoneError(""); setModal(null); }} onAddArticle={(category, draft) => { setBookingDraft(draft); setModal({ type: "booking-article", quickArticleCategory: category }); }} addedArticleId={quickCreatedArticleId} onAddedArticleHandled={() => setQuickCreatedArticleId("")} />
+    {modal?.type === "booking" && <Modal title="Create a booking" onClose={() => { setBookingDraft(null); setBookingFormError(""); setModal(null); }} wide>
+      <BookingForm draft={bookingDraft} formError={bookingFormError} onErrorChange={() => setBookingFormError("")} articles={articles} customers={customers} onSubmit={handleBookingSubmit} onCancel={() => { setBookingDraft(null); setBookingFormError(""); setModal(null); }} onAddArticle={(category, draft) => { setBookingDraft(draft); setModal({ type: "booking-article", quickArticleCategory: category }); }} addedArticleId={quickCreatedArticleId} onAddedArticleHandled={() => setQuickCreatedArticleId("")} />
     </Modal>}
     {modal?.type === "sale" && <Modal title="Record a sale" description="Record a sale without rental dates or measurements." onClose={() => setModal(null)}>
       <SaleForm onSubmit={handleSaleSubmit} onCancel={() => setModal(null)} />
@@ -1832,7 +1832,7 @@ export default function App() {
   </div>;
 }
 
-function BookingForm({ booking, draft, phoneError, onPhoneChange, articles, customers, onSubmit, onCancel, onAddArticle, addedArticleId, onAddedArticleHandled }) {
+function BookingForm({ booking, draft, formError, onErrorChange, articles, customers, onSubmit, onCancel, onAddArticle, addedArticleId, onAddedArticleHandled }) {
   const [selectedArticleIds, setSelectedArticleIds] = useState(booking ? bookingArticleIds(booking) : draft?.selectedArticleIds || []);
   const selectedArticles = articles.filter((item) => selectedArticleIds.includes(item.id));
   const jewelleryOnly = selectedArticles.length > 0 && selectedArticles.every((item) => item.category === "Jewellery Set");
@@ -1864,10 +1864,10 @@ function BookingForm({ booking, draft, phoneError, onPhoneChange, articles, cust
   const [amount, setAmount] = useState(booking ? String(booking.amount ?? "") : draft?.amount || "");
   const [paid, setPaid] = useState(booking ? String(booking.paid ?? "") : draft?.paid || "");
   const [returnDate, setReturnDate] = useState(booking?.returnDate || draft?.returnDate || "");
-  const phoneErrorRef = useRef(null);
+  const formActionsRef = useRef(null);
   useEffect(() => {
-    if (phoneError) phoneErrorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [phoneError]);
+    if (formError) formActionsRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [formError]);
   useEffect(() => {
     if (!addedArticleId || selectedArticleIds.includes(addedArticleId)) return;
     const updatedIds = [...selectedArticleIds, addedArticleId];
@@ -1908,9 +1908,8 @@ function BookingForm({ booking, draft, phoneError, onPhoneChange, articles, cust
     </div>
     <div className="booking-customer-field field-full">
       <Field label="Customer name *"><input name="customerName" value={customerDetails.name} onChange={(event) => setCustomerDetails({ ...customerDetails, name: event.target.value })} placeholder="Customer name" required /></Field>
-      <Field label="Phone number 1 *"><input name="customerPhone" type="tel" inputMode="tel" autoComplete="tel" value={customerDetails.phone} onChange={(event) => { setCustomerDetails({ ...customerDetails, phone: event.target.value }); onPhoneChange(); }} placeholder="03XXXXXXXXX or +923XXXXXXXXX" required /></Field>
-      <Field label="Phone number 2 (optional)"><input name="customerPhone2" type="tel" inputMode="tel" autoComplete="tel-national" value={customerDetails.phone2} onChange={(event) => { setCustomerDetails({ ...customerDetails, phone2: event.target.value }); onPhoneChange(); }} placeholder="Optional" /></Field>
-      {phoneError && <p className="booking-phone-error" ref={phoneErrorRef} role="alert">{phoneError}</p>}
+      <Field label="Phone number 1 *"><input name="customerPhone" type="tel" inputMode="tel" autoComplete="tel" value={customerDetails.phone} onChange={(event) => { setCustomerDetails({ ...customerDetails, phone: event.target.value }); onErrorChange(); }} placeholder="03XXXXXXXXX or +923XXXXXXXXX" required /></Field>
+      <Field label="Phone number 2 (optional)"><input name="customerPhone2" type="tel" inputMode="tel" autoComplete="tel-national" value={customerDetails.phone2} onChange={(event) => { setCustomerDetails({ ...customerDetails, phone2: event.target.value }); onErrorChange(); }} placeholder="Optional" /></Field>
       <Field label="Address *" className="field-full"><input name="customerAddress" value={customerDetails.address} onChange={(event) => setCustomerDetails({ ...customerDetails, address: event.target.value })} placeholder="Customer address" required /></Field>
     </div>
     <Field label="Delivery date *"><DateInput name="delivery" ariaLabel="Delivery date" min={booking ? undefined : today} value={deliveryDate} onChange={(nextDate) => {
@@ -1932,7 +1931,8 @@ function BookingForm({ booking, draft, phoneError, onPhoneChange, articles, cust
         : <p className="booking-article-empty">No jewellery sets available. Add a Jewellery Set article to your collection.</p>}
       {onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={(event) => preserveDraftAndAddArticle("Jewellery Set", event.currentTarget.closest("form"))}>Add jewellery set</Button>}
     </section>
-    <div className="modal-actions"><Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={booking ? Check : CalendarDays}>{booking ? "Save changes" : "Confirm booking"}</Button></div>
+    {formError && <div className="booking-form-error field-full" role="alert" aria-live="assertive"><AlertTriangle size={18} /><span>{formError}</span></div>}
+    <div className="modal-actions" ref={formActionsRef}><Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={booking ? Check : CalendarDays}>{booking ? "Save changes" : "Confirm booking"}</Button></div>
   </form>;
 }
 
