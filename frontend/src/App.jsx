@@ -382,27 +382,27 @@ function BookingsPage({ bookings, articles, query, onQueryChange, onNew, onView,
   return <>
     <PageHeader eyebrow="RENTAL MANAGEMENT" title={jewelleryOnly ? "Jewellery Set Booking" : isAdmin ? "Bookings" : "My bookings"} description={jewelleryOnly ? "View bookings that include a jewellery set, alone or with an outfit." : "Track reservations, delivery dates and returns."} action actionLabel="New booking" onAction={onNew} />
     <div className="booking-stats"><MiniMetric label="All bookings" value={visibleBookings.length} /><MiniMetric label="Confirmed" value={visibleBookings.filter((b) => b.status === "Confirmed").length} tone="plum" /><MiniMetric label="Currently out" value={visibleBookings.filter((b) => b.status === "Out").length} tone="orange" /><MiniMetric label="Returned" value={visibleBookings.filter((b) => b.status === "Returned").length} tone="green" /></div>
-    <div className="toolbar"><div className="toolbar-search"><Search size={16} /><input placeholder="Search booking, customer or article..." value={query} onChange={(event) => onQueryChange(event.target.value)} /></div>
-      <div className="toolbar-controls"><select value={filter} onChange={(event) => setFilter(event.target.value)}><option>All bookings</option><option>Confirmed</option><option>Out</option><option>Returned</option></select>
-        <Button variant="outline" icon={Download} onClick={() => window.print()}>Export</Button></div></div>
     <section className="booking-date-filter-panel"><div><strong>Filter bookings by delivery date</strong><span>Select a date to show its bookings and the following day.</span></div><label><CalendarDays size={16} /><DateInput ariaLabel="Filter bookings from selected delivery date through next day" value={deliveryDate} onChange={setDeliveryDate} /></label>{deliveryDate && <><span className="booking-date-range">Showing {readableDate(deliveryDate)} – {readableDate(dateAfter(deliveryDate, 1))}</span><Button variant="outline" onClick={() => setDeliveryDate("")}>Clear date</Button></>}</section>
+    <div className="bookings-toolbar">
+      <div className="toolbar-controls bookings-toolbar-controls"><select aria-label="Filter bookings by status" value={filter} onChange={(event) => setFilter(event.target.value)}><option>All bookings</option><option>Confirmed</option><option>Out</option><option>Returned</option></select>
+        <Button variant="outline" icon={Download} onClick={() => window.print()}>Export</Button></div>
+      <div className="toolbar-search bookings-toolbar-search"><Search size={16} /><input aria-label="Search bookings" placeholder="Search booking, customer or article..." value={query} onChange={(event) => onQueryChange(event.target.value)} /></div>
+    </div>
     <section className="panel table-panel"><div className="table-scroll"><table><thead><tr><th>BILL</th><th>BOOKING ID</th><th>CUSTOMER</th><th>ARTICLES</th><th>BOOKING DATE</th><th>DELIVERY</th><th>RETURN</th><th>AMOUNT / DUE</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
       <tbody>{filtered.map((booking) => {
         const articleRecords = bookingArticleRecords(booking, articles);
         const firstPhoto = articleRecords.find((article) => article.photo)?.photo;
         return <tr key={booking.id} onClick={() => onView(booking)} className="clickable-row">
-          <td><button className="booking-receipt-action" onClick={(event) => { event.stopPropagation(); onView(booking); }} aria-label={`View bill for booking ${booking.id}`}><Eye size={15} /><span>View bill</span></button></td>
+          <td><div className="booking-bill-actions"><button className="booking-receipt-action" onClick={(event) => { event.stopPropagation(); onView(booking); }} aria-label={`View bill for booking ${booking.id}`}><Eye size={15} /><span>View bill</span></button>
+            {booking.amount > booking.paid && ["Confirmed", "Out"].includes(booking.status) && <Button variant="small" icon={Wallet} onClick={(event) => { event.stopPropagation(); onRecordPayment(booking); }}>Receive balance</Button>}</div></td>
           <td className="strong-cell">{booking.id}</td><td><strong>{booking.customer}</strong><small className="sub-cell">{booking.phone}</small></td>
           <td><div className="booking-article-cell">{firstPhoto ? <img src={firstPhoto} alt="" /> : <span className="booking-article-thumbnail-placeholder"><Shirt size={16} /></span>}<span><b className="article-id">{bookingArticleLabels(booking) || "No article"}</b><small className="sub-cell">{bookingArticleTitles(booking) || "—"}</small></span></div></td>
           <td>{readableDate(booking.bookingDate)}</td><td>{readableDate(booking.delivery)}</td><td>{readableDate(booking.returnDate)}</td>
           <td><strong>{currency(booking.amount)}</strong><small className="sub-cell">{booking.amount > booking.paid ? `${currency(booking.amount - booking.paid)} due` : "Paid"}</small></td>
           <td><Status>{booking.status}</Status></td><td><div className="booking-row-actions">
-            {booking.status === "Confirmed" && (booking.amount > booking.paid
-              ? <Button variant="small" icon={Wallet} onClick={(event) => { event.stopPropagation(); onRecordPayment(booking); }}>Receive balance</Button>
-              : <Button variant="small" icon={Truck} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Out"); }}>Mark picked up</Button>)}
+            {booking.status === "Confirmed" && booking.amount <= booking.paid && <Button variant="small" icon={Truck} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Out"); }}>Mark picked up</Button>}
             {booking.status === "Out" && <Button variant="small" icon={Check} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Returned"); }}>Confirm return</Button>}
-            {booking.status === "Out" && booking.amount > booking.paid && <Button variant="small" icon={Wallet} onClick={(event) => { event.stopPropagation(); onRecordPayment(booking); }}>Receive balance</Button>}
-            <div className="booking-admin-actions"><button className="icon-button" onClick={(event) => { event.stopPropagation(); onEdit(booking); }} aria-label={`Edit booking ${booking.id}`}><Pencil size={15} /></button><button className="icon-button booking-delete-button" onClick={(event) => { event.stopPropagation(); onDelete(booking); }} aria-label={`Delete booking ${booking.id}`}><Trash2 size={15} /></button></div>
+            {isAdmin && <div className="booking-admin-actions"><button className="icon-button" onClick={(event) => { event.stopPropagation(); onEdit(booking); }} aria-label={`Edit booking ${booking.id}`}><Pencil size={15} /></button><button className="icon-button booking-delete-button" onClick={(event) => { event.stopPropagation(); onDelete(booking); }} aria-label={`Delete booking ${booking.id}`}><Trash2 size={15} /></button></div>}
           </div></td></tr>;
       })}</tbody></table>
       {filtered.length === 0 && <EmptyState title={jewelleryOnly ? "No jewellery set bookings found" : "No bookings found"} detail={jewelleryOnly ? "Bookings with a jewellery set will appear here." : "Try another search or add your first booking."} />}</div></section>
