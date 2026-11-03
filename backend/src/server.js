@@ -124,7 +124,9 @@ function requireAdmin(request, response, next) {
 }
 
 function requireResourceAccess(request, response, next) {
-  if (request.params.resource === "settings" && request.account.role !== "admin") {
+  if (request.params.resource === "settings"
+    && request.account.role !== "admin"
+    && request.method !== "GET") {
     response.status(403).json({ error: "Administrator access is required for workspace settings." });
     return;
   }
@@ -134,6 +136,11 @@ function requireResourceAccess(request, response, next) {
 async function checkSalesWriteAccess(resource, account, collection, upserts, deletes) {
   if (account.role !== "sales") return null;
   if (deletes.length) return "Salesperson profiles cannot delete shared records.";
+
+  if (resource === "articles") {
+    const existing = await collection.find({ _id: { $in: upserts.map((item) => item.id) } }).toArray();
+    if (existing.length) return "Article changes must be approved by an administrator.";
+  }
 
   if (resource === "bookings") {
     const existing = await collection.find({ _id: { $in: upserts.map((item) => item.id) } }).toArray();
@@ -206,6 +213,48 @@ async function checkSalesWriteAccess(resource, account, collection, upserts, del
     }
   }
   return null;
+}
+
+function bookingArticleIds(booking) {
+  if (Array.isArray(booking.articles)) {
+    return booking.articles.map((article) => typeof article === "string" ? article : article.id).filter(Boolean);
+  }
+  return String(booking.article || "").split(",").map((id) => id.trim()).filter(Boolean);
+}
+
+function validIsoDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value || "")
+    && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))
+    && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+}
+
+async function findBookingConflict(db, candidate, excludedId) {
+  const articleIds = new Set(bookingArticleIds(candidate));
+  if (!articleIds.size) return null;
+  const activeBookings = await db.collection("bookings").find({
+    _id: { $ne: excludedId },
+    status: { $nin: ["Returned", "Cancelled"] },
+  }).toArray();
+  return activeBookings.find((booking) => booking.delivery <= candidate.returnDate
+    && booking.returnDate >= candidate.delivery
+    && bookingArticleIds(booking).some((id) => articleIds.has(id))) || null;
+}
+
+async function updateArticleAvailability(db, articleIds) {
+  if (!articleIds.length) return;
+  const [bookings, articles] = await Promise.all([
+    db.collection("bookings").find({ status: { $nin: ["Returned", "Cancelled"] } }).toArray(),
+    db.collection("articles").find({ _id: { $in: articleIds } }).toArray(),
+  ]);
+  const operations = articles
+    .filter((article) => article.status !== "Maintenance")
+    .map((article) => ({
+      updateOne: {
+        filter: { _id: article._id },
+        update: { $set: { status: bookings.some((booking) => bookingArticleIds(booking).includes(String(article._id))) ? "Booked" : "Available" } },
+      },
+    }));
+  if (operations.length) await db.collection("articles").bulkWrite(operations, { ordered: false });
 }
 
 async function makePinRecord(pin) {
@@ -364,6 +413,232 @@ app.delete("/api/auth/session", requireAuth, async (request, response, next) => 
   try {
     await (await getDatabase()).collection("sessions").deleteOne({ _id: request.sessionTokenHash });
     response.json({ status: "ok" });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/approval-requests", requireAuth, async (request, response, next) => {
+  try {
+    const query = request.account.role === "admin"
+      ? {}
+      : { requestedById: request.account._id };
+    const items = await (await getDatabase()).collection("approvalRequests").find(query).sort({ requestedAt: -1 }).toArray();
+    response.json({ items: items.map(({ _id, ...item }) => ({ ...item, id: String(_id) })) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/approval-requests", requireAuth, async (request, response, next) => {
+  try {
+    if (request.account.role !== "sales") {
+      response.status(403).json({ error: "Only salesperson profiles need to request approval." });
+      return;
+    }
+    const { entityType, action, recordId, proposedRecord } = request.body || {};
+    if (!["booking", "article", "sale"].includes(entityType)
+      || !["edit", "delete"].includes(action)
+      || typeof recordId !== "string" || !recordId.trim()
+      || (action === "edit" && (!proposedRecord || proposedRecord.id !== recordId))) {
+      response.status(400).json({ error: "The approval request is invalid." });
+      return;
+    }
+    const db = await getDatabase();
+    const collectionName = `${entityType}s`;
+    const collection = db.collection(collectionName);
+    const currentRecord = await collection.findOne({ _id: recordId });
+    if (!currentRecord) {
+      response.status(404).json({ error: "The requested record no longer exists." });
+      return;
+    }
+    if ((entityType === "booking" || entityType === "sale") && currentRecord.createdById !== request.account._id) {
+      response.status(403).json({ error: "You can only request changes to records created by your profile." });
+      return;
+    }
+    if (action === "delete" && entityType === "article") {
+      const activeBookings = await db.collection("bookings").find({ status: { $nin: ["Returned", "Cancelled"] } }).toArray();
+      const activeBooking = activeBookings.find((booking) => bookingArticleIds(booking).includes(recordId));
+      if (activeBooking) {
+        response.status(409).json({ error: `This article is still reserved in booking ${activeBooking._id}.` });
+        return;
+      }
+    }
+    if (action === "edit") {
+      const proposed = proposedRecord;
+      if (entityType === "booking"
+        && (proposed.createdById !== currentRecord.createdById
+          || proposed.customerId !== currentRecord.customerId
+          || proposed.status !== currentRecord.status
+          || Number(proposed.paid) !== Number(currentRecord.paid)
+          || Number(proposed.amount) < Number(proposed.paid)
+          || !Number.isFinite(Number(proposed.amount))
+          || Number(proposed.amount) <= 0
+          || typeof proposed.customer !== "string" || !proposed.customer.trim()
+          || typeof proposed.phone !== "string" || !proposed.phone.trim()
+          || typeof proposed.address !== "string" || !proposed.address.trim()
+          || !validIsoDate(proposed.delivery)
+          || !validIsoDate(proposed.returnDate)
+          || proposed.returnDate < proposed.delivery
+          || !Array.isArray(proposed.articles))) {
+        response.status(400).json({ error: "The proposed booking changes are invalid." });
+        return;
+      }
+      if (entityType === "sale"
+        && (proposed.createdById !== currentRecord.createdById
+          || !Number.isFinite(Number(proposed.amount))
+          || !Number.isFinite(Number(proposed.paid))
+          || Number(proposed.amount) <= 0
+          || Number(proposed.paid) < 0
+          || Number(proposed.paid) > Number(proposed.amount)
+          || typeof proposed.customer !== "string" || !proposed.customer.trim()
+          || typeof proposed.itemDescription !== "string" || !proposed.itemDescription.trim()
+          || !/^\d{4}-\d{2}-\d{2}$/.test(proposed.date || ""))) {
+        response.status(400).json({ error: "The proposed sale changes are invalid." });
+        return;
+      }
+      if (entityType === "article"
+        && (proposed.status !== currentRecord.status
+          || typeof proposed.name !== "string" || !proposed.name.trim()
+          || typeof proposed.category !== "string" || !proposed.category.trim()
+          || !Number.isFinite(Number(proposed.price))
+          || Number(proposed.price) < 0
+          || typeof proposed.photo !== "string")) {
+        response.status(400).json({ error: "The proposed article changes are invalid." });
+        return;
+      }
+      if (entityType === "booking") {
+        const conflict = await findBookingConflict(db, proposed, recordId);
+        if (conflict) {
+          response.status(409).json({ error: `The article is already reserved in booking ${conflict._id} for those dates.` });
+          return;
+        }
+      }
+    }
+    let safeProposedRecord;
+    if (action === "edit") {
+      const editableFields = {
+        booking: ["customer", "phone", "phone2", "address", "articles", "article", "articleName", "delivery", "returnDate", "amount", "chest", "back", "hip", "notes"],
+        article: ["name", "category", "price", "priceMin", "priceMax", "minOrder", "photo", "color"],
+        sale: ["date", "customer", "phone", "itemDescription", "amount", "paid", "method", "notes"],
+      }[entityType];
+      safeProposedRecord = Object.fromEntries(editableFields
+        .filter((field) => Object.prototype.hasOwnProperty.call(proposedRecord, field))
+        .map((field) => [field, proposedRecord[field]]));
+    }
+    const id = `APR-${randomBytes(12).toString("hex").toUpperCase()}`;
+    const approvalRequest = {
+      _id: id,
+      entityType,
+      action,
+      recordId,
+      currentRecord: Object.fromEntries(Object.entries(currentRecord).filter(([key]) => key !== "_id")),
+      ...(action === "edit" ? { proposedRecord: safeProposedRecord } : {}),
+      requestedById: request.account._id,
+      requestedBy: request.account.name,
+      status: "Pending",
+      requestedAt: new Date(),
+    };
+    await db.collection("approvalRequests").insertOne(approvalRequest);
+    const { _id, ...item } = approvalRequest;
+    response.status(201).json({ item: { ...item, id: String(_id) } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/approval-requests/:id/review", requireAuth, requireAdmin, async (request, response, next) => {
+  try {
+    const { decision } = request.body || {};
+    if (!["Approved", "Rejected"].includes(decision)) {
+      response.status(400).json({ error: "Choose Approved or Rejected." });
+      return;
+    }
+    const db = await getDatabase();
+    const requests = db.collection("approvalRequests");
+    const approvalRequest = await requests.findOne({ _id: request.params.id, status: "Pending" });
+    if (!approvalRequest) {
+      response.status(404).json({ error: "This approval request is no longer pending." });
+      return;
+    }
+    if (decision === "Approved") {
+      const records = db.collection(`${approvalRequest.entityType}s`);
+      const current = await records.findOne({ _id: approvalRequest.recordId });
+      if (!current) {
+        response.status(409).json({ error: "The record no longer exists." });
+        return;
+      }
+      if (approvalRequest.action === "delete") {
+        if (approvalRequest.entityType === "article") {
+          const activeBookings = await db.collection("bookings").find({ status: { $nin: ["Returned", "Cancelled"] } }).toArray();
+          const activeBooking = activeBookings.find((booking) => bookingArticleIds(booking).includes(approvalRequest.recordId));
+          if (activeBooking) {
+            response.status(409).json({ error: `This article is reserved in booking ${activeBooking._id}.` });
+            return;
+          }
+        }
+        const affectedArticleIds = approvalRequest.entityType === "booking" ? bookingArticleIds(current) : [];
+        await records.deleteOne({ _id: approvalRequest.recordId });
+        if (approvalRequest.entityType === "booking") {
+          await db.collection("payments").deleteMany({ booking: approvalRequest.recordId });
+          await updateArticleAvailability(db, affectedArticleIds);
+        }
+      } else {
+        const proposed = approvalRequest.proposedRecord;
+        if (approvalRequest.entityType === "booking" && current.createdById !== approvalRequest.requestedById) {
+          response.status(403).json({ error: "The booking owner changed before approval." });
+          return;
+        }
+        if (approvalRequest.entityType === "booking") {
+          const conflict = await findBookingConflict(db, proposed, approvalRequest.recordId);
+          if (conflict) {
+            response.status(409).json({ error: `The article is already reserved in booking ${conflict._id} for those dates.` });
+            return;
+          }
+        }
+        const currentRecord = { ...current };
+        delete currentRecord._id;
+        await records.replaceOne({ _id: approvalRequest.recordId }, { ...currentRecord, ...proposed, id: approvalRequest.recordId });
+        if (approvalRequest.entityType === "booking" && current.customerId) {
+          await db.collection("customers").updateOne(
+            { _id: current.customerId },
+            { $set: {
+              name: proposed.customer,
+              phone: proposed.phone,
+              phone2: proposed.phone2 || "",
+              address: proposed.address,
+            } },
+          );
+        }
+        if (approvalRequest.entityType === "booking") {
+          await updateArticleAvailability(db, [...new Set([...bookingArticleIds(current), ...bookingArticleIds(proposed)])]);
+        }
+        if (approvalRequest.entityType === "article") {
+          const bookings = await db.collection("bookings").find({}).toArray();
+          for (const booking of bookings) {
+            let changed = false;
+            const updatedArticles = booking.articles?.map((article) => {
+              if (typeof article !== "object" || article.id !== approvalRequest.recordId) return article;
+              changed = true;
+              return { ...article, name: proposed.name, photo: proposed.photo, category: proposed.category };
+            });
+            if (changed) {
+              await db.collection("bookings").updateOne({ _id: booking._id }, { $set: {
+                articles: updatedArticles,
+                articleName: updatedArticles.map((article) => typeof article === "string" ? article : article.name).join(", "),
+              } });
+            }
+          }
+        }
+      }
+    }
+    await requests.updateOne({ _id: approvalRequest._id, status: "Pending" }, { $set: {
+      status: decision,
+      reviewedById: request.account._id,
+      reviewedBy: request.account.name,
+      reviewedAt: new Date(),
+    } });
+    response.json({ status: "ok", decision });
   } catch (error) {
     next(error);
   }

@@ -166,3 +166,23 @@ export function refreshCollection(collection) {
     throw error;
   });
 }
+
+export async function loadApprovalRequests() {
+  const result = await request("/api/approval-requests");
+  if (!Array.isArray(result.items)) throw new Error("Invalid approval request response from the API.");
+  return result.items;
+}
+
+export function createApprovalRequest(requestDetails) {
+  return request("/api/approval-requests", {
+    method: "POST",
+    body: JSON.stringify(requestDetails),
+  });
+}
+
+export function reviewApprovalRequest(id, decision) {
+  return request(`/api/approval-requests/${encodeURIComponent(id)}/review`, {
+    method: "POST",
+    body: JSON.stringify({ decision }),
+  });
+}

@@ -5,6 +5,7 @@ import {
   Gem, LogOut, Menu, MoreHorizontal, Plus, Search, Settings, ShieldCheck, Shirt, ShoppingCart,
   SlidersHorizontal, Sparkles, Users, Wallet, X, UserRound, Truck, LockKeyhole,
   RotateCcw, RefreshCw, ChartNoAxesCombined, CreditCard, Eye, Pencil, AlertTriangle, Trash2,
+  ArrowLeft, CheckCircle2, XCircle, Phone,
 } from "lucide-react";
 import { seedArticles, seedBookings, seedCustomers, seedPayments } from "./data.js";
 import AccessScreen from "./AccessScreen.jsx";
@@ -14,7 +15,10 @@ import {
   createStaff, deleteStaff, loadAuthProfiles, loadManagedProfiles, restoreSession, saveProfile,
   setupAdmin, signIn, signOut as requestSignOut, updateAdminPin, validPin,
 } from "./auth.js";
-import { itemChanges, loadCollection, mergeChanges, persistCollectionChanges, refreshCollection } from "./dataSync.js";
+import {
+  createApprovalRequest, itemChanges, loadApprovalRequests, loadCollection, mergeChanges,
+  persistCollectionChanges, refreshCollection, reviewApprovalRequest,
+} from "./dataSync.js";
 import { localizeNode, translateText } from "./i18n.js";
 
 const currency = (amount) => `PKR ${Number(amount || 0).toLocaleString("en-PK")}`;
@@ -106,7 +110,7 @@ const navGroups = [
   { label: "WORKSPACE", items: [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "articles", label: "Articles", icon: Shirt, badge: "6" },
-    { id: "bookings", label: "Bookings", icon: CalendarDays },
+    { id: "bookings", label: "Bookings", icon: CalendarDays, badge: "bookings" },
     { id: "sales", label: "Sales", icon: ShoppingCart },
     { id: "jewellery-bookings", label: "Jewellery Set Booking", icon: Gem },
     { id: "customers", label: "Customers", icon: Users },
@@ -118,6 +122,7 @@ const navGroups = [
     { id: "calendar", label: "Calendar", icon: CalendarDays },
   ] },
   { label: "MANAGEMENT", adminOnly: true, items: [
+    { id: "approvals", label: "Approvals", icon: CheckCircle2, badge: "approvals" },
     { id: "reports", label: "Reports", icon: ChartNoAxesCombined },
     { id: "staff", label: "Staff & roles", icon: ShieldCheck },
     { id: "settings", label: "Settings", icon: Settings },
@@ -194,14 +199,14 @@ function useSyncedData(collection, fallback, enabled) {
   return [value, update];
 }
 
-function Status({ children }) {
+function Status({ children, className = "" }) {
   const normalized = String(children).toLowerCase();
-  const className = normalized.includes("available") || normalized.includes("returned") || normalized === "paid" || normalized === "ready"
+  const statusColor = normalized.includes("available") || normalized.includes("returned") || normalized === "paid" || normalized === "ready"
     ? "green"
     : normalized.includes("out") || normalized.includes("due") || normalized.includes("maintenance") || normalized.includes("overdue")
       ? "amber"
       : normalized.includes("cancel") ? "gray" : "rose";
-  return <span className={`status status-${className}`}><i />{children}</span>;
+  return <span className={`status status-${statusColor}${className ? ` ${className}` : ""}`}><i />{children}</span>;
 }
 
 function Button({ children, variant = "primary", icon: Icon, onClick, type = "button", className = "", ...props }) {
@@ -220,7 +225,7 @@ function PageHeader({ eyebrow, title, description, action, actionLabel, actionIc
 function Modal({ title, description, onClose, children, wide = false, className = "" }) {
   return <div className={`modal-backdrop ${className ? `${className}-backdrop` : ""}`} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
     <section className={`modal ${wide ? "modal-wide" : ""} ${className}`} role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <div className="modal-heading"><div><h2 id="modal-title">{title}</h2><p>{description}</p></div>
+      <div className="modal-heading"><div><h2 id="modal-title">{title}</h2>{description && <p>{description}</p>}</div>
         <button className="icon-button" aria-label="Close dialog" onClick={onClose}><X size={19} /></button></div>
       {children}
     </section>
@@ -245,12 +250,13 @@ function Dashboard({ articles, bookings, payments, role, profile, onNavigate }) 
     .reduce((sum, payment) => sum + Number(payment.amount || 0), 0));
   const highestRevenue = Math.max(...monthlyRevenue);
   const maintenanceCount = articles.filter((item) => item.status === "Maintenance").length;
-  return <>
+  return <div className="delivery-prep-page">
     <PageHeader eyebrow={`${role === "admin" ? "ADMINISTRATOR" : "SALESPERSON"} OVERVIEW`} title={`Good morning, ${profile.name.split(" ")[0]} ✨`}
       description="Here’s what’s happening at your boutique today." action actionLabel="Create booking" actionIcon={Plus} onAction={() => onNavigate("new-booking")} actionClassName="dashboard-create-booking" />
     <div className="welcome-strip">
       <div className="welcome-icon"><Sparkles size={21} /></div>
       <div><strong>Your boutique at a glance</strong><span>Stay on top of today’s fittings, deliveries and returns.</span></div>
+      <Button className="welcome-create-booking" icon={Plus} onClick={() => onNavigate("new-booking")}>Create booking</Button>
       <button onClick={() => onNavigate("calendar")}>View calendar <ChevronRight size={16} /></button>
       <span className="strip-decoration">✦</span>
     </div>
@@ -296,7 +302,7 @@ function Dashboard({ articles, bookings, payments, role, profile, onNavigate }) 
         <div className="stock-note"><AlertTriangle size={15} /><span>{maintenanceCount ? `${maintenanceCount} article${maintenanceCount === 1 ? "" : "s"} need attention before the next booking.` : "No articles currently need attention."}</span></div>
       </section>
     </div>
-  </>;
+  </div>;
 }
 
 function StatCard({ label, value, note, icon: Icon, tone, trend, onTrendClick }) {
@@ -359,24 +365,30 @@ function BookingsPage({ bookings, articles, query, onQueryChange, onNew, onView,
       <div className="toolbar-controls"><select value={filter} onChange={(event) => setFilter(event.target.value)}><option>All bookings</option><option>Confirmed</option><option>Out</option><option>Returned</option></select>
         <Button variant="outline" icon={Download} onClick={() => window.print()}>Export</Button></div></div>
     <section className="booking-date-filter-panel"><div><strong>Filter bookings by delivery date</strong><span>Select a date to show its bookings and the following day.</span></div><label><CalendarDays size={16} /><DateInput ariaLabel="Filter bookings from selected delivery date through next day" value={deliveryDate} onChange={setDeliveryDate} /></label>{deliveryDate && <><span className="booking-date-range">Showing {readableDate(deliveryDate)} – {readableDate(dateAfter(deliveryDate, 1))}</span><Button variant="outline" onClick={() => setDeliveryDate("")}>Clear date</Button></>}</section>
-    <section className="panel table-panel"><div className="table-scroll"><table><thead><tr><th>BOOKING DATE</th><th>BOOKING ID</th><th>CUSTOMER</th><th>BILL</th><th>ARTICLES</th><th>DELIVERY</th><th>RETURN</th><th>CREATED BY</th><th>AMOUNT / DUE</th><th>STATUS</th><th></th></tr></thead>
-      <tbody>{filtered.map((booking) => <tr key={booking.id} onClick={() => onView(booking)} className="clickable-row">
-        <td>{readableDate(booking.bookingDate)}</td><td className="strong-cell">{booking.id}</td><td><strong>{booking.customer}</strong><small className="sub-cell">{booking.phone}</small></td>
-        <td><button className="booking-receipt-action" onClick={(event) => { event.stopPropagation(); onView(booking); }} aria-label={`View bill for booking ${booking.id}`}><Eye size={15} /><span>View bill</span></button></td>
-        <td><span className="article-id">{bookingArticleLabels(booking)}</span><small className="sub-cell">{bookingArticleTitles(booking)}</small></td><td>{readableDate(booking.delivery)}</td><td>{readableDate(booking.returnDate)}</td><td>{booking.createdBy || booking.staff || "—"}</td>
-        <td><strong>{currency(booking.amount)}</strong><small className="sub-cell">{booking.amount > booking.paid ? `${currency(booking.amount - booking.paid)} due` : "Paid"}</small></td>
-        <td><Status>{booking.status}</Status></td><td><div className="booking-row-actions">
-          {booking.status === "Confirmed" && (booking.amount > booking.paid
-            ? <Button variant="small" icon={Wallet} onClick={(event) => { event.stopPropagation(); onRecordPayment(booking); }}>Receive balance</Button>
-            : <Button variant="small" icon={Truck} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Out"); }}>Mark picked up</Button>)}
-          {booking.status === "Out" && <Button variant="small" icon={Check} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Returned"); }}>Confirm return</Button>}
-          {booking.status === "Out" && booking.amount > booking.paid && <Button variant="small" icon={Wallet} onClick={(event) => { event.stopPropagation(); onRecordPayment(booking); }}>Receive balance</Button>}
-          {isAdmin && <><button className="icon-button" onClick={(event) => { event.stopPropagation(); onEdit(booking); }} aria-label={`Edit booking ${booking.id}`}><Pencil size={15} /></button><button className="icon-button booking-delete-button" onClick={(event) => { event.stopPropagation(); onDelete(booking); }} aria-label={`Delete booking ${booking.id}`}><Trash2 size={15} /></button></>}</div></td></tr>)}</tbody></table>
+    <section className="panel table-panel"><div className="table-scroll"><table><thead><tr><th>BILL</th><th>BOOKING ID</th><th>CUSTOMER</th><th>ARTICLES</th><th>BOOKING DATE</th><th>DELIVERY</th><th>RETURN</th><th>AMOUNT / DUE</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
+      <tbody>{filtered.map((booking) => {
+        const articleRecords = bookingArticleRecords(booking, articles);
+        const firstPhoto = articleRecords.find((article) => article.photo)?.photo;
+        return <tr key={booking.id} onClick={() => onView(booking)} className="clickable-row">
+          <td><button className="booking-receipt-action" onClick={(event) => { event.stopPropagation(); onView(booking); }} aria-label={`View bill for booking ${booking.id}`}><Eye size={15} /><span>View bill</span></button></td>
+          <td className="strong-cell">{booking.id}</td><td><strong>{booking.customer}</strong><small className="sub-cell">{booking.phone}</small></td>
+          <td><div className="booking-article-cell">{firstPhoto ? <img src={firstPhoto} alt="" /> : <span className="booking-article-thumbnail-placeholder"><Shirt size={16} /></span>}<span><b className="article-id">{bookingArticleLabels(booking) || "No article"}</b><small className="sub-cell">{bookingArticleTitles(booking) || "—"}</small></span></div></td>
+          <td>{readableDate(booking.bookingDate)}</td><td>{readableDate(booking.delivery)}</td><td>{readableDate(booking.returnDate)}</td>
+          <td><strong>{currency(booking.amount)}</strong><small className="sub-cell">{booking.amount > booking.paid ? `${currency(booking.amount - booking.paid)} due` : "Paid"}</small></td>
+          <td><Status>{booking.status}</Status></td><td><div className="booking-row-actions">
+            {booking.status === "Confirmed" && (booking.amount > booking.paid
+              ? <Button variant="small" icon={Wallet} onClick={(event) => { event.stopPropagation(); onRecordPayment(booking); }}>Receive balance</Button>
+              : <Button variant="small" icon={Truck} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Out"); }}>Mark picked up</Button>)}
+            {booking.status === "Out" && <Button variant="small" icon={Check} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Returned"); }}>Confirm return</Button>}
+            {booking.status === "Out" && booking.amount > booking.paid && <Button variant="small" icon={Wallet} onClick={(event) => { event.stopPropagation(); onRecordPayment(booking); }}>Receive balance</Button>}
+            <div className="booking-admin-actions"><button className="icon-button" onClick={(event) => { event.stopPropagation(); onEdit(booking); }} aria-label={`Edit booking ${booking.id}`}><Pencil size={15} /></button><button className="icon-button booking-delete-button" onClick={(event) => { event.stopPropagation(); onDelete(booking); }} aria-label={`Delete booking ${booking.id}`}><Trash2 size={15} /></button></div>
+          </div></td></tr>;
+      })}</tbody></table>
       {filtered.length === 0 && <EmptyState title={jewelleryOnly ? "No jewellery set bookings found" : "No bookings found"} detail={jewelleryOnly ? "Bookings with a jewellery set will appear here." : "Try another search or add your first booking."} />}</div></section>
   </>;
 }
 
-function SalesPage({ sales, query, onQueryChange, onNew }) {
+function SalesPage({ sales, query, onQueryChange, onNew, onEdit, onDelete }) {
   const filtered = sales.filter((sale) => `${sale.id} ${sale.customer} ${sale.itemDescription}`.toLowerCase().includes(query.toLowerCase()));
   const total = filtered.reduce((sum, sale) => sum + Number(sale.amount || 0), 0);
   const received = filtered.reduce((sum, sale) => sum + Number(sale.paid || 0), 0);
@@ -384,8 +396,8 @@ function SalesPage({ sales, query, onQueryChange, onNew }) {
     <PageHeader eyebrow="RETAIL SALES" title="Sales" description="Record and review boutique sales separately from rental bookings." action actionLabel="Record sale" actionIcon={Plus} onAction={onNew} />
     <div className="booking-stats"><MiniMetric label="Sales total" value={currency(total)} /><MiniMetric label="Received" value={currency(received)} tone="green" /><MiniMetric label="Balance due" value={currency(Math.max(total - received, 0))} tone="orange" /><MiniMetric label="Transactions" value={filtered.length} tone="plum" /></div>
     <div className="toolbar"><div className="toolbar-search"><Search size={16} /><input placeholder="Search sale, customer or item..." value={query} onChange={(event) => onQueryChange(event.target.value)} /></div></div>
-    <section className="panel table-panel"><div className="table-scroll"><table><thead><tr><th>DATE</th><th>SALE ID</th><th>CUSTOMER</th><th>ITEM / DESCRIPTION</th><th>AMOUNT</th><th>PAID</th><th>BALANCE</th><th>SOLD BY</th></tr></thead>
-      <tbody>{filtered.map((sale) => <tr key={sale.id}><td>{readableDate(sale.date)}</td><td className="strong-cell">{sale.id}</td><td><strong>{sale.customer}</strong><small className="sub-cell">{sale.phone || "—"}</small></td><td>{sale.itemDescription}</td><td>{currency(sale.amount)}</td><td>{currency(sale.paid)}</td><td>{currency(Math.max(Number(sale.amount) - Number(sale.paid), 0))}</td><td>{sale.createdBy || "—"}</td></tr>)}</tbody>
+    <section className="panel table-panel"><div className="table-scroll"><table><thead><tr><th>DATE</th><th>SALE ID</th><th>CUSTOMER</th><th>ITEM / DESCRIPTION</th><th>AMOUNT</th><th>PAID</th><th>BALANCE</th><th>SOLD BY</th><th>ACTIONS</th></tr></thead>
+      <tbody>{filtered.map((sale) => <tr key={sale.id}><td>{readableDate(sale.date)}</td><td className="strong-cell">{sale.id}</td><td><strong>{sale.customer}</strong><small className="sub-cell">{sale.phone || "—"}</small></td><td>{sale.itemDescription}</td><td>{currency(sale.amount)}</td><td>{currency(sale.paid)}</td><td>{currency(Math.max(Number(sale.amount) - Number(sale.paid), 0))}</td><td>{sale.createdBy || "—"}</td><td><div className="booking-admin-actions"><button className="icon-button" onClick={() => onEdit(sale)} aria-label={`Edit sale ${sale.id}`}><Pencil size={15} /></button><button className="icon-button booking-delete-button" onClick={() => onDelete(sale)} aria-label={`Delete sale ${sale.id}`}><Trash2 size={15} /></button></div></td></tr>)}</tbody>
       </table>{filtered.length === 0 && <EmptyState title="No sales found" detail={query ? "Try another search or record a new sale." : "Your recorded sales will appear here."} />}</div></section>
   </>;
 }
@@ -476,7 +488,7 @@ function FinanceCard({ label, value, note, icon: Icon, tone }) {
   return <article className="finance-card"><span className={`stat-icon icon-${tone}`}><Icon size={18} /></span><span className="finance-label">{label}</span><strong>{value}</strong><small>{note}</small></article>;
 }
 
-function ReturnsPage({ bookings, onReturn }) {
+function ReturnsPage({ bookings, onReturn, onStatusChange, onRecordPayment }) {
   const active = bookings.filter((booking) => booking.status === "Out" || booking.status === "Confirmed");
   const out = active.filter((booking) => booking.status === "Out");
   return <>
@@ -486,7 +498,11 @@ function ReturnsPage({ bookings, onReturn }) {
     <section className="panel table-panel" id="returns-list"><div className="panel-heading table-title"><div><h2>Rental tracking</h2><p>Confirm returns as soon as the article is received and checked.</p></div></div>
       <div className="table-scroll"><table><thead><tr><th>BOOKING</th><th>ARTICLE</th><th>CUSTOMER</th><th>DELIVERY DATE</th><th>EXPECTED RETURN</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>
         {active.map((booking) => <tr key={booking.id}><td className="strong-cell">{booking.id}</td><td><strong>{bookingArticleTitles(booking)}</strong><small className="sub-cell">{bookingArticleLabels(booking)}</small></td><td>{booking.customer}<small className="sub-cell">{booking.phone}</small></td><td>{readableDate(booking.delivery)}</td><td>{readableDate(booking.returnDate)}</td><td><Status>{booking.status === "Out" ? booking.returnDate < today ? "Overdue" : "With customer" : "Upcoming"}</Status></td>
-          <td>{booking.status === "Out" ? <Button variant="small" icon={Check} onClick={() => onReturn(booking.id)}>Confirm return</Button> : <span className="subtle-count">Not delivered</span>}</td></tr>)}
+          <td>{booking.status === "Out"
+            ? <Button variant="small" icon={Check} onClick={() => onReturn(booking.id)}>Confirm return</Button>
+            : booking.amount > booking.paid
+              ? <Button variant="small" icon={Wallet} onClick={() => onRecordPayment(booking)}>Receive balance</Button>
+              : <Button variant="small" icon={Truck} onClick={() => onStatusChange(booking, "Out")}>Mark picked up</Button>}</td></tr>)}
       </tbody></table></div></section>
     <div className="return-tip"><Sparkles size={17} /><span><strong>Return checklist:</strong> inspect the article condition, record any damage, and confirm any remaining payment before marking it available.</span></div>
   </>;
@@ -499,6 +515,12 @@ function TomorrowDeliveriesPage({ bookings, articles, dateRange, onRangeChange, 
     .sort((left, right) => left.delivery.localeCompare(right.delivery) || left.customer.localeCompare(right.customer));
   const dressCount = deliveries.reduce((sum, booking) => sum + booking.deliveryArticles.length, 0);
   const readyCount = deliveries.reduce((sum, booking) => sum + booking.deliveryArticles.filter((article) => booking.prepReadyArticleIds?.includes(article.id)).length, 0);
+  const printList = () => {
+    const cleanup = () => document.body.classList.remove("printing-delivery-prep");
+    document.body.classList.add("printing-delivery-prep");
+    window.addEventListener("afterprint", cleanup, { once: true });
+    window.print();
+  };
   const exportCsv = () => {
     const rows = [
       ["Booking", "Customer", "Phone", "Delivery date", "Article ID", "Article name", "Article photo", "Chest (in)", "Back (in)", "Hip (in)", "Special instructions", "Prep status"],
@@ -538,7 +560,7 @@ function TomorrowDeliveriesPage({ bookings, articles, dateRange, onRangeChange, 
       <div><strong>{readyCount} / {dressCount}</strong><span>Ready dresses</span></div>
       <div className="prep-actions">
         <Button variant="outline" icon={Download} onClick={exportCsv}>Export CSV</Button>
-        <Button variant="primary" icon={FileText} onClick={() => window.print()}>Print list</Button>
+        <Button variant="primary" icon={FileText} onClick={printList}>Print list</Button>
       </div>
     </div>
     {deliveries.length === 0
@@ -561,8 +583,9 @@ function TomorrowDeliveriesPage({ bookings, articles, dateRange, onRangeChange, 
   </>;
 }
 
-function CalendarPage({ bookings, onNew }) {
+function CalendarPage({ bookings, articles, onNew, onView }) {
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [selectedDate, setSelectedDate] = useState("");
   const firstDay = new Date(month.getFullYear(), month.getMonth(), 1);
   const offset = (firstDay.getDay() + 6) % 7;
   const days = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
@@ -574,10 +597,19 @@ function CalendarPage({ bookings, onNew }) {
       <div className="calendar-arrows"><button className="button button-outline" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><ChevronLeft size={17} />Previous</button><button className="button button-outline" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}>Next<ChevronRight size={17} /></button></div></div>
       <div className="calendar-grid">{["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((day) => <div className="calendar-weekday" key={day}>{day}</div>)}
         {Array.from({ length: offset }, (_, i) => <div className="calendar-day empty-day" key={`empty-${i}`} />)}
-        {Array.from({ length: days }, (_, i) => { const day = i + 1; const events = dayEvents(day); return <div className={`calendar-day ${dateString(day) === today ? "current-day" : ""}`} key={day}><span className="day-number">{day}</span>
-          {events.slice(0, 2).map((event) => <span className={`calendar-event event-${event.delivery === dateString(day) ? "delivery" : "return"}`} key={`${event.id}-${day}`}>{event.delivery === dateString(day) ? "Delivery" : "Return"} · {event.customer.split(" ")[0]}</span>)}
-          {events.length > 2 && <small className="more-events">+{events.length - 2} more</small>}</div>; })}
+        {Array.from({ length: days }, (_, i) => { const day = i + 1; const events = dayEvents(day); return <div className={`calendar-day ${dateString(day) === today ? "current-day" : ""} ${selectedDate === dateString(day) ? "selected-calendar-day" : ""}`} key={day}><button type="button" className="day-number" onClick={() => setSelectedDate(dateString(day))} aria-label={`Show bookings for ${readableDate(dateString(day))}`}>{day}</button>
+          {events.map((event) => <button type="button" className={`calendar-event event-${event.delivery === dateString(day) ? "delivery" : "return"}`} key={`${event.id}-${day}-${event.delivery === dateString(day) ? "delivery" : "return"}`} onClick={() => onView(event)} aria-label={`${event.delivery === dateString(day) ? "Delivery" : "Return"} details for ${event.customer} on ${readableDate(dateString(day))}`}>{event.delivery === dateString(day) ? "Delivery" : "Return"} · {event.customer.split(" ")[0]}</button>)}
+        </div>; })}
       </div></section>
+      {selectedDate && <section className="panel calendar-day-details"><div className="panel-heading"><div><h2>{readableDate(selectedDate)}</h2><p>Bookings with a delivery or expected return on this date</p></div><button className="icon-button" onClick={() => setSelectedDate("")} aria-label="Close date details"><X size={17} /></button></div>
+        {bookings.filter((booking) => booking.delivery === selectedDate || booking.returnDate === selectedDate).length
+          ? bookings.filter((booking) => booking.delivery === selectedDate || booking.returnDate === selectedDate).map((booking) => <article className="calendar-detail-row" key={booking.id}>
+            {bookingArticleRecords(booking, articles).find((article) => article.photo)?.photo && <img src={bookingArticleRecords(booking, articles).find((article) => article.photo).photo} alt="" />}
+            <div><strong>{booking.customer} · {booking.id}</strong><span>{bookingArticleTitles(booking) || "No articles selected"}</span><small>{booking.delivery === selectedDate ? "Delivery" : ""}{booking.delivery === selectedDate && booking.returnDate === selectedDate ? " · " : ""}{booking.returnDate === selectedDate ? "Expected return" : ""} · {booking.phone} · {currency(booking.amount)} · {booking.status}</small></div>
+            <Button variant="outline" icon={Eye} onClick={() => onView(booking)}>View bill</Button>
+          </article>)
+          : <p className="calendar-no-bookings">No booking events on this date.</p>}
+      </section>}
       <aside className="panel calendar-side"><div className="panel-heading"><div><h2>Upcoming</h2><p>Next in your schedule</p></div></div>
         <div className="calendar-legend"><span><i className="legend-delivery" />Delivery</span><span><i className="legend-return" />Expected return</span></div>
         {bookings.filter((b) => b.status !== "Returned").slice(0, 4).map((booking) => <div className="upcoming-item" key={booking.id}><div className="upcoming-date"><strong>{new Date(`${booking.delivery}T00:00:00`).getDate()}</strong><span>{new Date(`${booking.delivery}T00:00:00`).toLocaleDateString("en", { month: "short" })}</span></div><div><strong>{booking.customer}</strong><span>{bookingArticleTitles(booking)}</span><small>Delivery · {readableDate(booking.delivery)}</small></div></div>)}
@@ -631,6 +663,44 @@ function ReportsPage({ bookings, payments, articles }) {
 
 function ReportShortcut({ icon: Icon, title, detail }) {
   return <button className="report-shortcut" onClick={() => window.print()}><span><Icon size={18} /></span><strong>{title}</strong><small>{detail}</small><ChevronRight size={16} /></button>;
+}
+
+function ApprovalsPage({ requests, error, onReview }) {
+  const pending = requests.filter((request) => request.status === "Pending");
+  const history = requests.filter((request) => request.status !== "Pending");
+  const summary = (request) => {
+    const record = request.currentRecord || {};
+    const label = request.entityType === "booking"
+      ? `${record.id || request.recordId} · ${record.customer || "Customer"}`
+      : request.entityType === "article"
+        ? `${record.id || request.recordId} · ${record.name || "Article"}`
+        : `${record.id || request.recordId} · ${record.customer || "Sale"}`;
+    return request.action === "delete"
+      ? `Delete ${label}`
+      : `Edit ${label}`;
+  };
+  const requestCard = (request) => <article className="panel approval-card" key={request.id}>
+    <div><div className="approval-card-title"><strong>{summary(request)}</strong><Status>{request.status}</Status></div>
+      <p>Requested by {request.requestedBy || "Salesperson"} · {new Date(request.requestedAt).toLocaleString()}</p>
+      {request.action === "edit" && request.proposedRecord && <small>{request.entityType === "booking"
+        ? `Delivery ${readableDate(request.proposedRecord.delivery)} · Return ${readableDate(request.proposedRecord.returnDate)} · ${currency(request.proposedRecord.amount)}`
+        : request.entityType === "article"
+          ? `${request.proposedRecord.category} · ${currency(request.proposedRecord.price)} rental`
+          : `${request.proposedRecord.itemDescription} · ${currency(request.proposedRecord.amount)}`}</small>}
+    </div>
+    {request.status === "Pending" && <div className="approval-actions">
+      <Button variant="outline" icon={XCircle} onClick={() => onReview(request, "Rejected")}>Reject</Button>
+      <Button icon={CheckCircle2} onClick={() => onReview(request, "Approved")}>Approve</Button>
+    </div>}
+  </article>;
+  return <>
+    <PageHeader eyebrow="MANAGEMENT" title="Approvals" description="Review booking, article, and sale changes requested by your team." />
+    {error && <p className="approval-error" role="alert">{error}</p>}
+    <section className="approval-section"><div className="panel-heading"><div><h2>Pending requests</h2><p>{pending.length} waiting for review</p></div></div>
+      {pending.length ? pending.map(requestCard) : <section className="panel"><EmptyState title="No pending requests" detail="Team change requests will appear here for review." /></section>}
+    </section>
+    {!!history.length && <section className="approval-section"><div className="panel-heading"><div><h2>Recent decisions</h2><p>Previously reviewed requests</p></div></div>{history.slice(0, 10).map(requestCard)}</section>}
+  </>;
 }
 
 function StaffPage({ salespeople, onAdd, onEdit, onToggle, onDelete, onChangeAdminPin }) {
@@ -833,6 +903,8 @@ export default function App() {
   const [payments, setPayments] = useSyncedData("payments", seedPayments, Boolean(session));
   const [sales, setSales] = useSyncedData("sales", [], Boolean(session));
   const [workspaceSettings, setWorkspaceSettings] = useSyncedData("settings", [], Boolean(session));
+  const [approvalRequests, setApprovalRequests] = useState([]);
+  const [approvalError, setApprovalError] = useState("");
   const businessSettings = workspaceSettings.find((item) => item.id === "business")?.value || defaultBusinessSettings;
   const notificationSettings = workspaceSettings.find((item) => item.id === "notifications")?.value || defaultNotificationSettings;
   const language = workspaceSettings.find((item) => item.id === "language")?.value || "en";
@@ -960,7 +1032,7 @@ export default function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, [session]);
   useEffect(() => {
-    const timer = window.setTimeout(() => setBootStage("access"), 1900);
+    const timer = window.setTimeout(() => setBootStage("access"), 700);
     return () => window.clearTimeout(timer);
   }, []);
   useEffect(() => {
@@ -989,7 +1061,66 @@ export default function App() {
   const notify = (message) => {
     setToast(translateText(message, language));
     window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(""), 5000);
+    toastTimer.current = window.setTimeout(() => setToast(""), 2500);
+  };
+  useEffect(() => {
+    if (!session) {
+      setApprovalRequests([]);
+      setApprovalError("");
+      return undefined;
+    }
+    let active = true;
+    const synchronizeApprovals = () => loadApprovalRequests()
+      .then((items) => {
+        if (!active) return;
+        setApprovalRequests(items);
+        setApprovalError("");
+      })
+      .catch((error) => {
+        if (active) setApprovalError(error.message || "Could not load approval requests.");
+      });
+    synchronizeApprovals();
+    window.addEventListener("focus", synchronizeApprovals);
+    const interval = window.setInterval(synchronizeApprovals, 30000);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", synchronizeApprovals);
+      window.clearInterval(interval);
+    };
+  }, [session]);
+  const requestApproval = async (requestDetails, successMessage) => {
+    try {
+      const { item } = await createApprovalRequest(requestDetails);
+      setApprovalRequests((current) => [item, ...current]);
+      setModal(null);
+      notify(successMessage);
+    } catch (error) {
+      notify(error.message || "Could not send this change for approval.");
+    }
+  };
+  const decideApproval = async (approval, decision) => {
+    try {
+      await reviewApprovalRequest(approval.id, decision);
+      const items = await loadApprovalRequests();
+      setApprovalRequests(items);
+      notify(decision === "Approved" ? "Change approved and applied." : "Change request rejected.");
+      if (approval.entityType === "booking") {
+        const [updatedBookings, updatedArticles, updatedCustomers, updatedPayments] = await Promise.all([
+          refreshCollection("bookings"), refreshCollection("articles"), refreshCollection("customers"), refreshCollection("payments"),
+        ]);
+        setBookings(updatedBookings);
+        setArticles(updatedArticles);
+        setCustomers(updatedCustomers);
+        setPayments(updatedPayments);
+      } else if (approval.entityType === "article") {
+        setArticles(await refreshCollection("articles"));
+        setBookings(await refreshCollection("bookings"));
+      } else if (approval.entityType === "sale") {
+        setSales(await refreshCollection("sales"));
+      }
+    } catch (error) {
+      notify(error.message || "Could not process this approval.");
+    }
   };
   const refreshAllDataRef = useRef(null);
   refreshAllDataRef.current = async () => {
@@ -1076,7 +1207,7 @@ export default function App() {
   const pageTitles = {
     dashboard: "Dashboard", articles: "Articles", bookings: role === "admin" ? "Bookings" : "My bookings", sales: "Sales", customers: "Customers",
     "jewellery-bookings": "Jewellery Set Booking",
-    payments: role === "admin" ? "Payments" : "Payments received", returns: "Returns & tracking", tomorrow: "Delivery prep", calendar: "Calendar", reports: "Reports",
+    payments: role === "admin" ? "Payments" : "Payments received", returns: "Returns & tracking", tomorrow: "Delivery prep", calendar: "Calendar", reports: "Reports", approvals: "Approvals",
     staff: "Staff & roles", settings: "Settings", profile: "My profile",
   };
   const visibleGroups = navGroups
@@ -1238,6 +1369,15 @@ export default function App() {
       color: form.get("color") || "rose",
     };
     if (!editingArticleId && articles.some((item) => item.id.toLowerCase() === next.id.toLowerCase())) { notify("That article number is already in use."); return; }
+    if (editingArticleId && role !== "admin") {
+      void requestApproval({
+        entityType: "article",
+        action: "edit",
+        recordId: editingArticleId,
+        proposedRecord: next,
+      }, `Article ${editingArticleId} changes sent to the administrator for approval.`);
+      return;
+    }
     setArticles(editingArticleId
       ? articles.map((item) => item.id === editingArticleId ? next : item)
       : [next, ...articles]);
@@ -1252,9 +1392,9 @@ export default function App() {
     notify(editingArticleId ? "Article changes saved." : "Article added to your collection.");
     return next;
   };
-  const handleArticleDelete = (article) => {
+  const handleArticleDelete = async (article) => {
     if (role !== "admin") {
-      notify("Only an administrator can delete articles.");
+      await requestApproval({ entityType: "article", action: "delete", recordId: article.id }, `Article ${article.id} deletion sent to the administrator for approval.`);
       return;
     }
     const activeBooking = bookings.find((booking) => bookingArticleIds(booking).includes(article.id)
@@ -1268,7 +1408,7 @@ export default function App() {
     setModal(null);
     notify("Article deleted.");
   };
-  const handleBookingSubmit = (event, editingBookingId = null) => {
+  const handleBookingSubmit = async (event, editingBookingId = null) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const selectedIds = form.getAll("articles").map(String);
@@ -1280,13 +1420,21 @@ export default function App() {
       phone2: String(form.get("customerPhone2") || "").trim(),
       address: String(form.get("customerAddress") || "").trim(),
     };
-    if (editingBookingId && role !== "admin") { notify("Only an administrator can edit bookings."); return; }
+    const isValidPakistaniPhone = (phone) => {
+      const compact = phone.trim().replace(/[\s()-]/g, "");
+      return /^03\d{9}$/.test(compact) || /^\+923\d{9}$/.test(compact);
+    };
     if (selectedArticles.length !== selectedIds.length) {
       notify("Check the selected articles and try again.");
       return;
     }
     if (!customerDetails.name || !customerDetails.phone || !customerDetails.address || (editingBookingId && !existing)) {
       notify("Enter the customer name, phone number, and address.");
+      return;
+    }
+    if (!isValidPakistaniPhone(customerDetails.phone)
+      || (customerDetails.phone2 && !isValidPakistaniPhone(customerDetails.phone2))) {
+      notify("Enter a complete phone number: 11 digits starting with 03, or +92 followed by 10 digits.");
       return;
     }
     const previousCustomer = existing && customers.find((item) => item.id === existing.customerId || item.name === existing.customer);
@@ -1300,8 +1448,15 @@ export default function App() {
       due: previousCustomer?.due || 0,
     };
     const delivery = form.get("delivery"), returnDate = form.get("returnDate");
+    const isIsoDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || "")
+      && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))
+      && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+    if (!isIsoDate(delivery) || !isIsoDate(returnDate) || (!existing && delivery < today)) {
+      notify("Choose valid delivery and return dates using DD/MM/YYYY. New bookings cannot use past delivery dates.");
+      return;
+    }
     if (returnDate < delivery) {
-      notify("Check the booking dates: return date must be on or after delivery.");
+      notify("Return date must be on or after the delivery date.");
       return;
     }
     const shouldCheckAvailability = !existing || !["Returned", "Cancelled"].includes(existing.status);
@@ -1312,6 +1467,10 @@ export default function App() {
     })[0];
     if (clash) { notify(`Date conflict: ${clash.article.id} is reserved for ${clash.booking.customer} until ${readableDate(clash.booking.returnDate)}.`); return; }
     const amount = Number(form.get("amount")), paid = Number(form.get("paid"));
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(paid) || paid < 0) {
+      notify("Enter a rental amount greater than zero and a valid advance payment.");
+      return;
+    }
     if (amount < paid) { notify("Rental amount cannot be less than the advance already paid."); return; }
     if (existing && paid !== existing.paid) { notify("Payments must be changed from the Payments page."); return; }
     const normalizedArticles = selectedArticles.map(({ id, name, photo, price, category }) => ({ id, name, photo, price, category }));
@@ -1343,6 +1502,15 @@ export default function App() {
       notes: form.get("notes"),
     };
     if (existing) {
+      if (role !== "admin") {
+        await requestApproval({
+          entityType: "booking",
+          action: "edit",
+          recordId: existing.id,
+          proposedRecord: nextBooking,
+        }, `Booking ${existing.id} changes sent to the administrator for approval.`);
+        return;
+      }
       setCustomers(previousCustomer
         ? customers.map((item) => item.id === customer.id ? customer : item)
         : [customer, ...customers]);
@@ -1377,7 +1545,7 @@ export default function App() {
     setModal({ type: "booking-detail", booking: nextBooking }, { replace: true });
     notify(`Booking ${nextBooking.id} created successfully.`);
   };
-  const handleSaleSubmit = (event) => {
+  const handleSaleSubmit = async (event, editingSaleId = null) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const amount = Number(form.get("amount"));
@@ -1387,7 +1555,7 @@ export default function App() {
       return;
     }
     const sale = {
-      id: createRecordId("SALE"),
+      id: editingSaleId || createRecordId("SALE"),
       date: form.get("date"),
       customer: form.get("customer").trim(),
       phone: form.get("phone").trim(),
@@ -1399,15 +1567,38 @@ export default function App() {
       createdBy: currentProfile.name,
       createdById: currentUserId,
     };
-    setSales((current) => [sale, ...current]);
+    if (editingSaleId && role !== "admin") {
+      await requestApproval({
+        entityType: "sale",
+        action: "edit",
+        recordId: editingSaleId,
+        proposedRecord: sale,
+      }, `Sale ${editingSaleId} changes sent to the administrator for approval.`);
+      return;
+    }
+    setSales((current) => editingSaleId
+      ? current.map((item) => item.id === editingSaleId ? sale : item)
+      : [sale, ...current]);
     setModal(null);
-    notify(`Sale ${sale.id} recorded successfully.`);
+    notify(editingSaleId ? `Sale ${sale.id} updated successfully.` : `Sale ${sale.id} recorded successfully.`);
   };
-  const handleBookingDelete = (booking) => {
-    if (role !== "admin") { notify("Only an administrator can delete bookings."); return; }
+  const handleSaleDelete = async (sale) => {
+    if (!window.confirm(`Delete sale ${sale.id} for ${sale.customer}? This cannot be undone.`)) return;
+    if (role !== "admin") {
+      await requestApproval({ entityType: "sale", action: "delete", recordId: sale.id }, `Sale ${sale.id} deletion sent to the administrator for approval.`);
+      return;
+    }
+    setSales((current) => current.filter((item) => item.id !== sale.id));
+    notify(`Sale ${sale.id} deleted.`);
+  };
+  const handleBookingDelete = async (booking) => {
     const linkedPayments = payments.filter((payment) => payment.booking === booking.id).length;
     const paymentWarning = linkedPayments ? ` Its ${linkedPayments} linked payment record(s) will also be deleted.` : "";
     if (!window.confirm(`Delete booking ${booking.id} for ${booking.customer}?${paymentWarning} This cannot be undone.`)) return;
+    if (role !== "admin") {
+      await requestApproval({ entityType: "booking", action: "delete", recordId: booking.id }, `Booking ${booking.id} deletion sent to the administrator for approval.`);
+      return;
+    }
     setBookings(bookings.filter((item) => item.id !== booking.id));
     setPayments(payments.filter((payment) => payment.booking !== booking.id));
     if (!["Returned", "Cancelled"].includes(booking.status)) {
@@ -1489,8 +1680,9 @@ export default function App() {
   const openArticleModal = () => setModal({ type: "article" });
   const openEditArticle = (article) => setModal({ type: "article-edit", article });
   const openEditBooking = (booking) => {
-    if (role === "admin") setModal({ type: "booking-edit", booking });
+    setModal({ type: "booking-edit", booking });
   };
+  const openEditSale = (sale) => setModal({ type: "sale-edit", sale });
   const openCustomerModal = () => setModal({ type: "customer" });
   const openPaymentModal = () => setModal({ type: "payment" });
   const openAddStaff = () => {
@@ -1503,17 +1695,23 @@ export default function App() {
   const dashboardBookings = role === "admin" ? bookings : bookings.filter((booking) => booking.createdById
     ? booking.createdById === currentUserId
     : (booking.createdBy || booking.staff) === currentProfile.name);
+  const pendingApprovalCount = approvalRequests.filter((item) => item.status === "Pending").length;
+  const deliveryPrepCount = bookings.filter((booking) => booking.delivery >= today
+    && !["Out", "Returned", "Cancelled"].includes(booking.status)).length;
   const content = (() => {
+    if (activePage === "approvals" && role === "admin") {
+      return <ApprovalsPage requests={approvalRequests} error={approvalError} onReview={decideApproval} />;
+    }
     switch (activePage) {
       case "articles": return <ArticlesPage articles={articles} query={filteredQuery} onQueryChange={setQuery} onAdd={openArticleModal} onEdit={openEditArticle} />;
       case "bookings": return <BookingsPage bookings={bookings} articles={articles} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} />;
-      case "sales": return <SalesPage sales={sales} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "sale" })} />;
+      case "sales": return <SalesPage sales={sales} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "sale" })} onEdit={openEditSale} onDelete={handleSaleDelete} />;
       case "jewellery-bookings": return <BookingsPage bookings={bookings} articles={articles} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} jewelleryOnly />;
       case "customers": return <CustomersPage customers={customers} query={filteredQuery} onQueryChange={setQuery} onAdd={openCustomerModal} />;
       case "payments": return <PaymentsPage payments={payments} bookings={bookings} query={filteredQuery} onQueryChange={setQuery} onAdd={openPaymentModal} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} salespeople={salespeople} adminProfile={profile} />;
-      case "returns": return <ReturnsPage bookings={bookings} onReturn={handleReturn} />;
+      case "returns": return <ReturnsPage bookings={bookings} onReturn={handleReturn} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} />;
       case "tomorrow": return <TomorrowDeliveriesPage bookings={bookings} articles={articles} dateRange={prepDateRange} onRangeChange={setPrepDateRange} onToggleReady={togglePrepReady} />;
-      case "calendar": return <CalendarPage bookings={bookings} onNew={() => setModal({ type: "booking" })} />;
+      case "calendar": return <CalendarPage bookings={bookings} articles={articles} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} />;
       case "reports": return <ReportsPage bookings={bookings} payments={payments} articles={articles} />;
       case "staff": return <StaffPage salespeople={salespeople} onAdd={openAddStaff} onEdit={(person) => setModal({ type: "staff-edit", person })} onToggle={handleStaffToggle} onDelete={handleStaffDelete} onChangeAdminPin={() => setModal({ type: "admin-pin" })} />;
       case "settings": return <SettingsPage language={language} onLanguageChange={setLanguage} business={businessSettings} onSaveBusiness={setBusinessSettings} notifications={notificationSettings} onNotificationsChange={setNotificationSettings} onChangeAdminPin={() => setModal({ type: "admin-pin" })} onManageStaff={() => nav("staff")} onNotify={notify} />;
@@ -1532,10 +1730,10 @@ export default function App() {
       <div className="brand"><div className="brand-mark"><span>DR</span><i>✦</i></div><div className="brand-name"><strong>Dulhan Rani</strong><span>BOUTIQUE MANAGEMENT</span></div><button className="sidebar-close icon-button" onClick={() => setMobileNav(false)}><X size={18} /></button></div>
       <div className="workspace-switch"><span className="workspace-avatar">{businessSettings.name.slice(0, 1) || "D"}</span><span><strong>{businessSettings.name}</strong><small>{businessSettings.address || "Workspace"}</small></span><ChevronDown size={15} /></div>
       <nav className="side-nav">{visibleGroups.map((group) => <div className="nav-group" key={group.label}><span className="nav-label">{group.label}</span>
-        {group.items.map(({ id, label, icon: Icon, badge }) => <button key={id} className={`nav-item ${activePage === id ? "nav-active" : ""}`} onClick={() => nav(id)}><Icon size={18} strokeWidth={1.8} /><span>{label}</span>{badge && <small className="nav-badge">{articles.length}</small>}</button>)}</div>)}</nav>
+        {group.items.map(({ id, label, icon: Icon, badge }) => <button key={id} className={`nav-item ${activePage === id ? "nav-active" : ""}`} onClick={() => nav(id)}><Icon size={18} strokeWidth={1.8} /><span>{label}</span>{(badge || id === "tomorrow") && <small className="nav-badge">{badge === "approvals" ? pendingApprovalCount : id === "articles" ? articles.length : id === "tomorrow" ? deliveryPrepCount : bookings.filter((booking) => !["Returned", "Cancelled"].includes(booking.status) && booking.returnDate >= today).length}</small>}</button>)}</div>)}</nav>
       <div className="sidebar-bottom"><div className="support-card"><span className="support-sparkle"><Sparkles size={16} /></span><strong>Need a hand?</strong><span>We’re here to help you get started.</span><button onClick={() => notify("Help center will be available soon.")}>Visit help center <ChevronRight size={14} /></button></div><button className="sidebar-profile" onClick={() => nav("profile")}><span className="avatar avatar-plum">{currentProfile.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span><span><strong>{currentProfile.name}</strong><small>{role === "admin" ? "Administrator" : "Salesperson"}</small></span><MoreHorizontal size={17} /></button></div>
     </aside>
-    <main className="main-area"><header className="topbar"><div className="topbar-left"><button className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="Open menu"><Menu size={21} /></button><div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>{pageTitles[activePage]}</strong></div></div>
+    <main className="main-area"><header className="topbar"><div className="topbar-left">{(activePage !== "dashboard" || modal) && <button className="topbar-back icon-button" onClick={() => window.history.back()} aria-label="Go back"><ArrowLeft size={19} /></button>}<button className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="Open menu"><Menu size={21} /></button><div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>{pageTitles[activePage]}</strong></div></div>
       <div className="topbar-right"><Button icon={Plus} onClick={() => nav("new-booking")} className="topbar-create-booking" aria-label="Create booking"><span>Create Booking</span></Button><label className="global-search"><Search size={16} /><input placeholder="Search anything..." value={query} onChange={(event) => setQuery(event.target.value)} /><kbd>⌘ K</kbd></label>
         <div className="notification-wrap"><button className="icon-button notification-button" aria-label="Notifications" onClick={() => setNotificationsOpen(!notificationsOpen)}><Bell size={18} />{hasNotifications && <i />}</button>
           {notificationsOpen && <div className="notification-popover"><strong>Notifications</strong>
@@ -1553,16 +1751,19 @@ export default function App() {
     {modal?.type === "article-edit" && <Modal title="Edit article" description="Update article details or replace and crop its photo." onClose={() => setModal(null)}>
       <ArticleForm article={modal.article} onSubmit={handleArticleSubmit} onCancel={() => setModal(null)} onDelete={handleArticleDelete} isAdmin={role === "admin"} />
     </Modal>}
-    {modal?.type === "booking" && <Modal title="Create a booking" description="Capture customer and rental details. Selecting articles is optional." onClose={() => setModal(null)} wide>
-      <BookingForm articles={articles} customers={customers} onSubmit={handleBookingSubmit} onCancel={() => setModal(null)} onAddArticle={(category) => setModal({ ...modal, quickArticle: true, quickArticleCategory: category })} addedArticleId={quickCreatedArticleId} onAddedArticleHandled={() => setQuickCreatedArticleId("")} />
+    {modal?.type === "booking" && <Modal title="Create a booking" onClose={() => setModal(null)} wide>
+      <BookingForm articles={articles} customers={customers} onSubmit={handleBookingSubmit} onCancel={() => setModal(null)} onAddArticle={(category) => setModal({ type: "booking-article", quickArticleCategory: category })} addedArticleId={quickCreatedArticleId} onAddedArticleHandled={() => setQuickCreatedArticleId("")} />
     </Modal>}
     {modal?.type === "sale" && <Modal title="Record a sale" description="Record a sale without rental dates or measurements." onClose={() => setModal(null)}>
       <SaleForm onSubmit={handleSaleSubmit} onCancel={() => setModal(null)} />
     </Modal>}
-    {modal?.type === "booking" && modal.quickArticle && <Modal title="Add an article" description="Create an inventory article, then it will be selected in this booking." onClose={() => window.history.back()}>
-      <ArticleForm initialCategory={modal.quickArticleCategory} onSubmit={(event) => handleArticleSubmit(event, null, false)} onSaved={(article) => { setQuickCreatedArticleId(article.id); window.history.back(); }} onCancel={() => window.history.back()} />
+    {modal?.type === "sale-edit" && <Modal title="Edit sale" description={`Update sale ${modal.sale.id}.`} onClose={() => setModal(null)}>
+      <SaleForm key={modal.sale.id} sale={modal.sale} onSubmit={(event) => handleSaleSubmit(event, modal.sale.id)} onCancel={() => setModal(null)} />
     </Modal>}
-    {modal?.type === "booking-edit" && role === "admin" && <Modal title="Edit booking" description={`Update reservation details for ${modal.booking.id}.`} onClose={() => setModal(null)} wide>
+    {modal?.type === "booking-article" && <Modal title="Add an article" description="Create an inventory article, then it will be selected in this booking." onClose={() => setModal(null)}>
+      <ArticleForm initialCategory={modal.quickArticleCategory} onSubmit={(event) => handleArticleSubmit(event, null, false)} onSaved={(article) => { setQuickCreatedArticleId(article.id); setModal(null); }} onCancel={() => setModal(null)} />
+    </Modal>}
+    {modal?.type === "booking-edit" && <Modal title={role === "admin" ? "Edit booking" : "Request booking changes"} description={`Update reservation details for ${modal.booking.id}.`} onClose={() => setModal(null)} wide>
       <BookingForm key={modal.booking.id} booking={modal.booking} articles={articles} customers={customers} onSubmit={handleBookingSubmit} onCancel={() => setModal(null)} />
     </Modal>}
     {modal?.type === "customer" && <Modal title="Add customer" description="Save customer contact details for future bookings." onClose={() => setModal(null)}>
@@ -1589,7 +1790,7 @@ export default function App() {
     </Modal>}
     {modal?.type === "booking-detail" && <Modal title="Booking details" description={`${modal.booking.id} · Created by ${modal.booking.createdBy || modal.booking.staff || "Unknown"}`} onClose={() => setModal(null)} className="receipt-modal">
       <div className="booking-detail"><header className="receipt-brand"><h1>{businessSettings.name || defaultBusinessSettings.name}</h1><p>{businessSettings.address}</p><p>{businessSettings.phone}{businessSettings.email ? ` · ${businessSettings.email}` : ""}</p><strong>Booking receipt · {modal.booking.id}</strong></header>
-        <div className="detail-highlight"><span><CalendarDays size={18} /></span><div><strong>{modal.booking.customer}</strong><small>{modal.booking.phone}</small></div><Status>{modal.booking.status}</Status></div>
+        <div className="detail-highlight"><span><CalendarDays size={20} /></span><div><strong>{modal.booking.customer}</strong><small><Phone size={13} />{modal.booking.phone || "No phone number"}</small></div><Status className="receipt-booking-status">{modal.booking.status}</Status></div>
         <div className="detail-lines"><div><span>Booking date</span><strong>{readableDate(modal.booking.bookingDate)}</strong></div><div><span>Booked by</span><strong>{modal.booking.createdBy || modal.booking.staff || "Unknown"}</strong></div><div><span>Outfits</span><strong>{detailArticles.filter((article) => article.category !== "Jewellery Set").map((article) => article.name).join(", ") || "—"}</strong><small>{detailArticles.filter((article) => article.category !== "Jewellery Set").map((article) => article.id).join(", ")}</small></div><div><span>Jewellery sets</span><strong>{detailArticles.filter((article) => article.category === "Jewellery Set").map((article) => article.name).join(", ") || "—"}</strong><small>{detailArticles.filter((article) => article.category === "Jewellery Set").map((article) => article.id).join(", ")}</small></div><div><span>Delivery date</span><strong>{readableDate(modal.booking.delivery)}</strong></div><div><span>Return date</span><strong>{readableDate(modal.booking.returnDate)}</strong></div>{detailArticles.some((article) => article.category !== "Jewellery Set") && <div><span>Measurements</span><strong>{[modal.booking.chest && `Chest ${modal.booking.chest} in`, modal.booking.back && `Back ${modal.booking.back} in`, modal.booking.hip && `Hip ${modal.booking.hip} in`].filter(Boolean).join(" · ") || "Not provided"}</strong></div>}<div><span>Rental amount</span><strong>{currency(modal.booking.amount)}</strong></div><div><span>Paid to date</span><strong>{currency(modal.booking.paid)}</strong></div><div><span>Remaining balance</span><strong className={modal.booking.amount > modal.booking.paid ? "due-text" : "paid-text"}>{currency(Math.max(modal.booking.amount - modal.booking.paid, 0))}</strong></div></div>
         <section className="receipt-payment-history"><h3>Payment collection history</h3>
           {payments.filter((payment) => payment.booking === modal.booking.id).length
@@ -1599,7 +1800,7 @@ export default function App() {
             : <p>No payment has been recorded yet.</p>}
         </section>
         {businessSettings.receiptFooter && <p className="receipt-footer">{businessSettings.receiptFooter}</p>}
-        <Button variant="outline" icon={FileText} onClick={() => window.print()}>Print booking receipt</Button>{role === "admin" && <div className="booking-detail-admin-actions"><Button variant="outline" icon={Pencil} onClick={() => openEditBooking(modal.booking)}>Edit booking</Button><Button variant="outline" icon={Trash2} onClick={() => handleBookingDelete(modal.booking)}>Delete booking</Button></div>}</div></Modal>}
+        <Button variant="outline" icon={FileText} onClick={() => window.print()}>Print booking receipt</Button><div className="booking-detail-admin-actions"><Button variant="outline" icon={Pencil} onClick={() => openEditBooking(modal.booking)}>{role === "admin" ? "Edit booking" : "Request changes"}</Button><Button variant="outline" icon={Trash2} onClick={() => handleBookingDelete(modal.booking)}>{role === "admin" ? "Delete booking" : "Request deletion"}</Button></div></div></Modal>}
     {toast && <div className="toast" role="status" aria-live="polite"><span><Check size={18} /></span><strong>{toast}</strong><button onClick={() => { window.clearTimeout(toastTimer.current); setToast(""); }} aria-label="Dismiss"><X size={17} /></button></div>}
   </div>;
 }
@@ -1644,7 +1845,7 @@ function BookingForm({ booking, articles, customers, onSubmit, onCancel, onAddAr
     setArticleSearch("");
     onAddedArticleHandled();
   }, [addedArticleId]);
-  return <form className="form-grid" onSubmit={(event) => onSubmit(event, booking?.id || null)}>
+  return <form className="form-grid" noValidate onSubmit={(event) => onSubmit(event, booking?.id || null)}>
     <div className="booking-article-picker field-full">
       <Field label="Category"><select aria-label="Filter articles by category" value={articleCategory} onChange={(event) => setArticleCategory(event.target.value)}><option>All categories</option>{categories.filter((category) => category !== "Jewellery Set").map((category) => <option key={category}>{category}</option>)}</select></Field>
       <label className="booking-article-search"><Search size={15} /><input type="search" aria-label="Search articles for booking" placeholder="Type article name or number..." value={articleSearch} onChange={(event) => setArticleSearch(event.target.value)} /></label>
@@ -1655,8 +1856,8 @@ function BookingForm({ booking, articles, customers, onSubmit, onCancel, onAddAr
     </div>
     <div className="booking-customer-field field-full">
       <Field label="Customer name *"><input name="customerName" value={customerDetails.name} onChange={(event) => setCustomerDetails({ ...customerDetails, name: event.target.value })} placeholder="Customer name" required /></Field>
-      <Field label="Phone number 1 *"><input name="customerPhone" type="tel" value={customerDetails.phone} onChange={(event) => setCustomerDetails({ ...customerDetails, phone: event.target.value })} placeholder="Phone number" required /></Field>
-      <Field label="Phone number 2 (optional)"><input name="customerPhone2" type="tel" value={customerDetails.phone2} onChange={(event) => setCustomerDetails({ ...customerDetails, phone2: event.target.value })} placeholder="Optional" /></Field>
+      <Field label="Phone number 1 *"><input name="customerPhone" type="tel" inputMode="tel" autoComplete="tel" value={customerDetails.phone} onChange={(event) => setCustomerDetails({ ...customerDetails, phone: event.target.value })} placeholder="03XXXXXXXXX or +923XXXXXXXXX" required /></Field>
+      <Field label="Phone number 2 (optional)"><input name="customerPhone2" type="tel" inputMode="tel" autoComplete="tel-national" value={customerDetails.phone2} onChange={(event) => setCustomerDetails({ ...customerDetails, phone2: event.target.value })} placeholder="Optional" /></Field>
       <Field label="Address *" className="field-full"><input name="customerAddress" value={customerDetails.address} onChange={(event) => setCustomerDetails({ ...customerDetails, address: event.target.value })} placeholder="Customer address" required /></Field>
     </div>
     <Field label="Delivery date *"><DateInput name="delivery" ariaLabel="Delivery date" min={booking ? undefined : today} value={deliveryDate} onChange={setDeliveryDate} required /></Field>
@@ -1680,21 +1881,21 @@ function BookingForm({ booking, articles, customers, onSubmit, onCancel, onAddAr
   </form>;
 }
 
-function SaleForm({ onSubmit, onCancel }) {
-  const [date, setDate] = useState(today);
-  const [amount, setAmount] = useState("");
-  const [paid, setPaid] = useState("");
+function SaleForm({ sale, onSubmit, onCancel }) {
+  const [date, setDate] = useState(sale?.date || today);
+  const [amount, setAmount] = useState(sale ? String(sale.amount) : "");
+  const [paid, setPaid] = useState(sale ? String(sale.paid) : "");
   return <form className="form-grid sale-form" onSubmit={onSubmit}>
     <Field label="Sale date *"><DateInput name="date" ariaLabel="Sale date" value={date} onChange={setDate} required /></Field>
-    <Field label="Customer name *"><input name="customer" placeholder="Customer name" required /></Field>
-    <Field label="Phone number"><input name="phone" type="tel" placeholder="Optional" /></Field>
-    <Field label="Item / sale details *" className="field-full"><input name="itemDescription" placeholder="Describe the item or sale" required /></Field>
+    <Field label="Customer name *"><input name="customer" defaultValue={sale?.customer || ""} placeholder="Customer name" required /></Field>
+    <Field label="Phone number"><input name="phone" type="tel" defaultValue={sale?.phone || ""} placeholder="Optional" /></Field>
+    <Field label="Item / sale details *" className="field-full"><input name="itemDescription" defaultValue={sale?.itemDescription || ""} placeholder="Describe the item or sale" required /></Field>
     <Field label="Sale total (PKR) *"><input name="amount" type="number" min="1" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Enter sale total" required /></Field>
     <Field label="Amount received (PKR)"><input name="paid" type="number" min="0" max={amount || undefined} value={paid} onChange={(event) => setPaid(event.target.value)} /></Field>
-    <Field label="Payment method"><select name="method"><option>Cash</option><option>Bank transfer</option><option>JazzCash</option><option>Easypaisa</option></select></Field>
-    <Field label="Notes" className="field-full"><textarea name="notes" rows="2" placeholder="Optional notes..." /></Field>
+    <Field label="Payment method"><select name="method" defaultValue={sale?.method || "Cash"}><option>Cash</option><option>Bank transfer</option><option>JazzCash</option><option>Easypaisa</option></select></Field>
+    <Field label="Notes" className="field-full"><textarea name="notes" rows="2" defaultValue={sale?.notes || ""} placeholder="Optional notes..." /></Field>
     <div className="sale-balance-summary field-full"><span>Balance due</span><strong>{currency(Math.max(Number(amount || 0) - Number(paid || 0), 0))}</strong></div>
-    <div className="modal-actions"><Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={Check}>Save sale</Button></div>
+    <div className="modal-actions"><Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={Check}>{sale ? "Save changes" : "Save sale"}</Button></div>
   </form>;
 }
 
@@ -1726,7 +1927,7 @@ function ArticleForm({ article, initialCategory, onSubmit, onCancel, onSaved, on
     <PhotoUpload value={photo} onChange={setPhoto} />
     <input className="form-hidden" type="hidden" name="photoData" value={photo} readOnly />
     <input className="form-hidden" type="hidden" name="color" value={article?.color || "rose"} readOnly />
-    <div className="modal-actions">{article && isAdmin && <Button variant="danger" type="button" icon={Trash2} onClick={() => onDelete(article)}>Delete article</Button>}<Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={article ? Check : Plus}>{article ? "Save article" : "Add article"}</Button></div>
+    <div className="modal-actions">{article && <Button variant="danger" type="button" icon={Trash2} onClick={() => onDelete(article)}>{isAdmin ? "Delete article" : "Request deletion"}</Button>}<Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={article ? Check : Plus}>{article ? isAdmin ? "Save article" : "Request changes" : "Add article"}</Button></div>
   </form>;
 }
 
