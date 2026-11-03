@@ -1,6 +1,6 @@
 import { getSessionToken } from "./auth.js";
 
-const collections = new Set(["articles", "bookings", "customers", "payments", "sales", "settings"]);
+const collections = new Set(["articles", "bookings", "customers", "payments", "sales", "settings", "deletedRecords"]);
 const pendingStorageKey = "drb-sync-pending";
 const queues = new Map();
 const apiBase = import.meta.env.VITE_API_URL || "";

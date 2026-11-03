@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 const app = express();
 const port = Number(process.env.PORT) || 4000;
 const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-const resources = new Set(["articles", "bookings", "customers", "payments", "sales", "settings"]);
+const resources = new Set(["articles", "bookings", "customers", "payments", "sales", "settings", "deletedRecords"]);
 const pbkdf2 = promisify(derivePinHash);
 const pinIterations = 120000;
 let client;
@@ -124,6 +124,10 @@ function requireAdmin(request, response, next) {
 }
 
 function requireResourceAccess(request, response, next) {
+  if (request.params.resource === "deletedRecords" && request.account.role !== "admin") {
+    response.status(403).json({ error: "Administrator access is required for recently deleted records." });
+    return;
+  }
   if (request.params.resource === "settings"
     && request.account.role !== "admin"
     && request.method !== "GET") {
@@ -770,7 +774,9 @@ app.get("/api/data/:resource", requireAuth, requireResourceAccess, async (reques
     }
 
     let query = {};
-    if (request.account.role === "sales") {
+    if (request.params.resource === "deletedRecords") {
+      query = { expiresAt: { $gt: new Date() } };
+    } else if (request.account.role === "sales") {
       if (request.params.resource === "bookings" || request.params.resource === "sales") {
         query = { createdById: request.account._id };
       } else if (request.params.resource === "payments") {
@@ -813,6 +819,11 @@ app.put("/api/data/:resource/sync", requireAuth, requireResourceAccess, async (r
       response.status(400).json({ error: "Every record must have a non-empty string id." });
       return;
     }
+    if (request.params.resource === "deletedRecords" && upserts.some((item) =>
+      typeof item.expiresAt !== "string" || Number.isNaN(Date.parse(item.expiresAt)))) {
+      response.status(400).json({ error: "Every recently deleted record needs a valid expiry date." });
+      return;
+    }
 
     const collection = (await connectToDatabase())
       .db(process.env.MONGODB_DB)
@@ -832,7 +843,11 @@ app.put("/api/data/:resource/sync", requireAuth, requireResourceAccess, async (r
       ...upserts.map(({ id, ...item }) => ({
         replaceOne: {
           filter: { _id: id },
-          replacement: { ...item, id },
+          replacement: {
+            ...item,
+            ...(request.params.resource === "deletedRecords" ? { expiresAt: new Date(item.expiresAt) } : {}),
+            id,
+          },
           upsert: true,
         },
       })),
@@ -856,7 +871,8 @@ app.use((error, _request, response, _next) => {
 });
 
 async function start() {
-  await connectToDatabase();
+  const database = await getDatabase();
+  await database.collection("deletedRecords").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
   app.listen(port, () => {
     console.log(`DRB API listening on http://localhost:${port}`);
   });

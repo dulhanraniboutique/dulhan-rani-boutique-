@@ -475,6 +475,15 @@ tbody tr:hover { background: #fdfbfc; }
 .bookings-toolbar-controls { width: 100%; justify-content: flex-start; }
 .bookings-toolbar-search { width: 100%; }
 .booking-bill-actions { display: flex; min-width: 128px; align-items: flex-start; flex-direction: column; gap: 6px; }
+.recently-deleted-panel { padding: 0 16px; }
+.recently-deleted-list { display: flex; flex-direction: column; }
+.recently-deleted-item { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 0; border-bottom: 1px solid #f2edef; }
+.recently-deleted-item:last-child { border-bottom: 0; }
+.recently-deleted-copy { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+.recently-deleted-copy > strong { overflow-wrap: anywhere; color: #59424f; font-size: 13px; }
+.recently-deleted-copy > small { color: #988b91; font-size: 10px; }
+.recently-deleted-type { color: #75405d; font-size: 9px; font-weight: 700; text-transform: capitalize; }
+.recently-deleted-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 7px; }
 .booking-measurements { padding: 10px; border: 1px solid #eee5e9; border-radius: 6px; background: #fcf9fb; }
 .booking-measurements > strong { color: #59424f; font-size: 9px; }
 .booking-measurements > strong span { color: #988b91; font-size: 8px; font-weight: 400; }
@@ -628,6 +637,9 @@ tbody tr:hover { background: #fdfbfc; }
   .booking-date-filter-panel { align-items: flex-start; flex-wrap: wrap; }
   .booking-date-filter-panel > div { flex-basis: 100%; }
   .booking-date-filter-panel > label { flex: 1; }
+  .recently-deleted-item { align-items: flex-start; flex-direction: column; }
+  .recently-deleted-actions { width: 100%; }
+  .recently-deleted-actions .button { flex: 1; justify-content: center; }
   .booking-article-options { grid-template-columns: 1fr; }
   .inventory-summary { align-items: flex-start; gap: 8px; font-size: 8px; }
   .inventory-summary > span:last-child { gap: 4px; }

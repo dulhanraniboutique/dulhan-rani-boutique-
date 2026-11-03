@@ -145,6 +145,7 @@ const navGroups = [
   ] },
   { label: "MANAGEMENT", adminOnly: true, items: [
     { id: "approvals", label: "Approvals", icon: CheckCircle2, badge: "approvals" },
+    { id: "recently-deleted", label: "Recently deleted", icon: Trash2 },
     { id: "reports", label: "Reports", icon: ChartNoAxesCombined },
     { id: "staff", label: "Staff & roles", icon: ShieldCheck },
     { id: "settings", label: "Settings", icon: Settings },
@@ -420,6 +421,30 @@ function SalesPage({ sales, query, onQueryChange, onNew, onEdit, onDelete }) {
     <section className="panel table-panel"><div className="table-scroll"><table><thead><tr><th>DATE</th><th>SALE ID</th><th>CUSTOMER</th><th>ITEM / DESCRIPTION</th><th>AMOUNT</th><th>PAID</th><th>BALANCE</th><th>SOLD BY</th><th>ACTIONS</th></tr></thead>
       <tbody>{filtered.map((sale) => <tr key={sale.id}><td>{readableDate(sale.date)}</td><td className="strong-cell">{sale.id}</td><td><strong>{sale.customer}</strong><small className="sub-cell">{sale.phone || "—"}</small></td><td>{sale.itemDescription}</td><td>{currency(sale.amount)}</td><td>{currency(sale.paid)}</td><td>{currency(Math.max(Number(sale.amount) - Number(sale.paid), 0))}</td><td>{sale.createdBy || "—"}</td><td><div className="booking-admin-actions"><button className="icon-button" onClick={() => onEdit(sale)} aria-label={`Edit sale ${sale.id}`}><Pencil size={15} /></button><button className="icon-button booking-delete-button" onClick={() => onDelete(sale)} aria-label={`Delete sale ${sale.id}`}><Trash2 size={15} /></button></div></td></tr>)}</tbody>
       </table>{filtered.length === 0 && <EmptyState title="No sales found" detail={query ? "Try another search or record a new sale." : "Your recorded sales will appear here."} />}</div></section>
+  </>;
+}
+
+function RecentlyDeletedPage({ records, onRestore, onPermanentlyDelete }) {
+  const activeRecords = records
+    .filter((entry) => Date.parse(entry.expiresAt) > Date.now())
+    .sort((left, right) => Date.parse(right.deletedAt) - Date.parse(left.deletedAt));
+  const describeRecord = (entry) => {
+    const record = entry.record || {};
+    if (entry.recordType === "article") return `${record.id} · ${record.name || "Article"}`;
+    if (entry.recordType === "booking") return `${record.id} · ${record.customer || "Booking"}`;
+    if (entry.recordType === "sale") return `${record.id} · ${record.customer || "Sale"}`;
+    return record.id || "Record";
+  };
+  return <>
+    <PageHeader eyebrow="ADMINISTRATION" title="Recently deleted" description="Restore deleted records within three days or permanently remove them." />
+    <section className="panel recently-deleted-panel">
+      {activeRecords.length ? <div className="recently-deleted-list">{activeRecords.map((entry) => <article className="recently-deleted-item" key={entry.id}>
+        <div className="recently-deleted-copy"><span className="recently-deleted-type">{entry.recordType}</span><strong>{describeRecord(entry)}</strong>
+          <small><span>Deleted </span>{new Date(entry.deletedAt).toLocaleString()}<span> · Expires </span>{new Date(entry.expiresAt).toLocaleString()}</small></div>
+        <div className="recently-deleted-actions"><Button variant="outline" icon={RotateCcw} onClick={() => onRestore(entry)}>Restore</Button>
+          <Button variant="danger" icon={Trash2} onClick={() => onPermanentlyDelete(entry)}>Delete permanently</Button></div>
+      </article>)}</div> : <EmptyState title="Nothing recently deleted" detail="Deleted articles, bookings, and sales will be kept here for three days." />}
+    </section>
   </>;
 }
 
@@ -919,6 +944,7 @@ export default function App() {
   const [bookings, setBookings] = useSyncedData("bookings", seedBookings, Boolean(session));
   const [payments, setPayments] = useSyncedData("payments", seedPayments, Boolean(session));
   const [sales, setSales] = useSyncedData("sales", [], Boolean(session));
+  const [deletedRecords, setDeletedRecords] = useSyncedData("deletedRecords", [], session?.role === "admin");
   const [workspaceSettings, setWorkspaceSettings] = useSyncedData("settings", [], Boolean(session));
   const [approvalRequests, setApprovalRequests] = useState([]);
   const [approvalError, setApprovalError] = useState("");
@@ -1124,7 +1150,17 @@ export default function App() {
   };
   const decideApproval = async (approval, decision) => {
     try {
+      const deletedRecord = decision === "Approved" && approval.action === "delete"
+        ? approval.entityType === "article" ? articles.find((item) => item.id === approval.recordId)
+          : approval.entityType === "booking" ? bookings.find((item) => item.id === approval.recordId)
+            : approval.entityType === "sale" ? sales.find((item) => item.id === approval.recordId)
+              : null
+        : null;
+      const deletedPayments = approval.entityType === "booking" && deletedRecord
+        ? payments.filter((payment) => payment.booking === deletedRecord.id)
+        : [];
       await reviewApprovalRequest(approval.id, decision);
+      if (deletedRecord) moveToRecentlyDeleted(approval.entityType, deletedRecord, { payments: deletedPayments });
       const items = await loadApprovalRequests();
       setApprovalRequests(items);
       notify(decision === "Approved" ? "Change approved and applied." : "Change request rejected.");
@@ -1156,6 +1192,7 @@ export default function App() {
       ["sales", setSales],
       ["settings", setWorkspaceSettings],
     ];
+    if (session?.role === "admin") collections.push(["deletedRecords", setDeletedRecords]);
     const results = await Promise.allSettled(collections.map(async ([collection, setCollection]) => {
       const items = await refreshCollection(collection);
       setCollection(items);
@@ -1230,6 +1267,7 @@ export default function App() {
   const currentUserId = role === "admin" ? "admin" : session.id;
   const pageTitles = {
     dashboard: "Dashboard", articles: "Articles", bookings: role === "admin" ? "Bookings" : "My bookings", sales: "Sales", customers: "Customers",
+    "recently-deleted": "Recently deleted",
     "jewellery-bookings": "Jewellery Set Booking",
     payments: role === "admin" ? "Payments" : "Payments received", returns: "Returns & tracking", tomorrow: "Delivery prep", calendar: "Calendar", reports: "Reports", approvals: "Approvals",
     staff: "Staff & roles", settings: "Settings", profile: "My profile",
@@ -1288,6 +1326,65 @@ export default function App() {
     setSession(newSession);
     setAuthError("");
     setActivePage("dashboard");
+  };
+  const moveToRecentlyDeleted = (recordType, record, relatedRecords = {}) => {
+    const deletedAt = new Date();
+    setDeletedRecords((current) => [{
+      id: createRecordId("DEL"),
+      recordType,
+      record,
+      relatedRecords,
+      deletedAt: deletedAt.toISOString(),
+      expiresAt: new Date(deletedAt.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+    }, ...current]);
+  };
+  const handleDeletedRecordRestore = (entry) => {
+    if (Date.parse(entry.expiresAt) <= Date.now()) {
+      setDeletedRecords((current) => current.filter((item) => item.id !== entry.id));
+      notify("This record has expired and can no longer be restored.");
+      return;
+    }
+    const record = entry.record;
+    if (entry.recordType === "article") {
+      if (articles.some((item) => item.id === record.id)) {
+        notify(`Cannot restore ${record.id}: an article with that number already exists.`);
+        return;
+      }
+      setArticles((current) => [record, ...current]);
+    } else if (entry.recordType === "sale") {
+      if (sales.some((item) => item.id === record.id)) {
+        notify(`Cannot restore ${record.id}: a sale with that ID already exists.`);
+        return;
+      }
+      setSales((current) => [record, ...current]);
+    } else if (entry.recordType === "booking") {
+      if (bookings.some((item) => item.id === record.id)) {
+        notify(`Cannot restore ${record.id}: a booking with that ID already exists.`);
+        return;
+      }
+      const restoredPayments = entry.relatedRecords?.payments || [];
+      if (restoredPayments.some((payment) => payments.some((item) => item.id === payment.id))) {
+        notify(`Cannot restore ${record.id}: one of its payment IDs is already in use.`);
+        return;
+      }
+      const updatedBookings = [record, ...bookings];
+      setBookings(updatedBookings);
+      setPayments((current) => [...restoredPayments, ...current]);
+      setArticles((current) => current.map((article) => article.status === "Maintenance"
+        ? article
+        : {
+          ...article,
+          status: updatedBookings.some((booking) => bookingArticleIds(booking).includes(article.id)
+            && !["Returned", "Cancelled"].includes(booking.status)) ? "Booked" : "Available",
+        }));
+    }
+    setDeletedRecords((current) => current.filter((item) => item.id !== entry.id));
+    notify(`${record.id} restored successfully.`);
+  };
+  const handleDeletedRecordPurge = (entry) => {
+    if (!window.confirm(`Permanently delete ${entry.record?.id || "this record"}? This cannot be undone.`)) return;
+    setDeletedRecords((current) => current.filter((item) => item.id !== entry.id));
+    notify(`${entry.record?.id || "Record"} permanently deleted.`);
   };
   const handleSignIn = async (selected, pin) => {
     const newSession = await signIn(selected.role === "admin" ? "admin" : selected.id, pin);
@@ -1430,10 +1527,11 @@ export default function App() {
       notify(`This article is reserved in booking ${activeBooking.id}. Complete or cancel that booking before deleting it.`);
       return;
     }
-    if (!window.confirm(`Delete ${article.name} (${article.id})? This cannot be undone.`)) return;
+    if (!window.confirm(`Move ${article.name} (${article.id}) to Recently deleted? It can be restored for three days.`)) return;
+    moveToRecentlyDeleted("article", article);
     setArticles((current) => current.filter((item) => item.id !== article.id));
     setModal(null);
-    notify("Article deleted.");
+    notify("Article moved to Recently deleted.");
   };
   const handleBookingSubmit = async (event, editingBookingId = null) => {
     event.preventDefault();
@@ -1610,22 +1708,26 @@ export default function App() {
     notify(editingSaleId ? `Sale ${sale.id} updated successfully.` : `Sale ${sale.id} recorded successfully.`);
   };
   const handleSaleDelete = async (sale) => {
-    if (!window.confirm(`Delete sale ${sale.id} for ${sale.customer}? This cannot be undone.`)) return;
     if (role !== "admin") {
       await requestApproval({ entityType: "sale", action: "delete", recordId: sale.id }, `Sale ${sale.id} deletion sent to the administrator for approval.`);
       return;
     }
+    if (!window.confirm(`Move sale ${sale.id} for ${sale.customer} to Recently deleted? It can be restored for three days.`)) return;
+    moveToRecentlyDeleted("sale", sale);
     setSales((current) => current.filter((item) => item.id !== sale.id));
-    notify(`Sale ${sale.id} deleted.`);
+    notify(`Sale ${sale.id} moved to Recently deleted.`);
   };
   const handleBookingDelete = async (booking) => {
-    const linkedPayments = payments.filter((payment) => payment.booking === booking.id).length;
-    const paymentWarning = linkedPayments ? ` Its ${linkedPayments} linked payment record(s) will also be deleted.` : "";
-    if (!window.confirm(`Delete booking ${booking.id} for ${booking.customer}?${paymentWarning} This cannot be undone.`)) return;
     if (role !== "admin") {
       await requestApproval({ entityType: "booking", action: "delete", recordId: booking.id }, `Booking ${booking.id} deletion sent to the administrator for approval.`);
       return;
     }
+    const linkedPayments = payments.filter((payment) => payment.booking === booking.id).length;
+    const paymentWarning = linkedPayments ? ` Its ${linkedPayments} linked payment record(s) will be moved with it.` : "";
+    if (!window.confirm(`Move booking ${booking.id} for ${booking.customer} to Recently deleted?${paymentWarning} It can be restored for three days.`)) return;
+    moveToRecentlyDeleted("booking", booking, {
+      payments: payments.filter((payment) => payment.booking === booking.id),
+    });
     setBookings(bookings.filter((item) => item.id !== booking.id));
     setPayments(payments.filter((payment) => payment.booking !== booking.id));
     if (!["Returned", "Cancelled"].includes(booking.status)) {
@@ -1637,7 +1739,7 @@ export default function App() {
       }));
     }
     setModal(null);
-    notify(`Booking ${booking.id} deleted.`);
+    notify(`Booking ${booking.id} moved to Recently deleted.`);
   };
   const handleCustomerSubmit = (event) => {
     event.preventDefault();
@@ -1728,6 +1830,11 @@ export default function App() {
   const content = (() => {
     if (activePage === "approvals" && role === "admin") {
       return <ApprovalsPage requests={approvalRequests} error={approvalError} onReview={decideApproval} />;
+    }
+    if (activePage === "recently-deleted") {
+      return role === "admin"
+        ? <RecentlyDeletedPage records={deletedRecords} onRestore={handleDeletedRecordRestore} onPermanentlyDelete={handleDeletedRecordPurge} />
+        : <EmptyState title="Administrator access required" detail="Recently deleted records are only available to an administrator." />;
     }
     switch (activePage) {
       case "articles": return <ArticlesPage articles={articles} query={filteredQuery} onQueryChange={setQuery} onAdd={openArticleModal} onEdit={openEditArticle} />;
