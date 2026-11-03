@@ -998,7 +998,10 @@ export default function App() {
   const setModal = (next, { replace = false } = {}) => {
     const resolved = typeof next === "function" ? next(modalRef.current) : next;
     if (!resolved) {
-      if (modalRef.current?.type === "booking") setBookingDraft(null);
+      if (modalRef.current?.type === "booking") {
+        setBookingDraft(null);
+        setBookingPhoneError("");
+      }
       if (modalRef.current && window.history.state?.drbApp && window.history.state.modalId) {
         window.history.back();
       } else {
@@ -1018,6 +1021,7 @@ export default function App() {
   };
   const [quickCreatedArticleId, setQuickCreatedArticleId] = useState("");
   const [bookingDraft, setBookingDraft] = useState(null);
+  const [bookingPhoneError, setBookingPhoneError] = useState("");
   const [toast, setToast] = useState("");
   const toastTimer = useRef(null);
   const [mobileNav, setMobileNav] = useState(false);
@@ -1454,9 +1458,11 @@ export default function App() {
     const phoneError = validatePakistaniPhone(customerDetails.phone)
       || (customerDetails.phone2 ? validatePakistaniPhone(customerDetails.phone2) : "");
     if (phoneError) {
+      setBookingPhoneError(phoneError);
       notify(phoneError);
       return;
     }
+    setBookingPhoneError("");
     const previousCustomer = existing && customers.find((item) => item.id === existing.customerId || item.name === existing.customer);
     const customer = {
       ...(previousCustomer || {}),
@@ -1772,8 +1778,8 @@ export default function App() {
     {modal?.type === "article-edit" && <Modal title="Edit article" description="Update article details or replace and crop its photo." onClose={() => setModal(null)}>
       <ArticleForm article={modal.article} onSubmit={handleArticleSubmit} onCancel={() => setModal(null)} onDelete={handleArticleDelete} isAdmin={role === "admin"} />
     </Modal>}
-    {modal?.type === "booking" && <Modal title="Create a booking" onClose={() => { setBookingDraft(null); setModal(null); }} wide>
-      <BookingForm draft={bookingDraft} articles={articles} customers={customers} onSubmit={handleBookingSubmit} onCancel={() => { setBookingDraft(null); setModal(null); }} onAddArticle={(category, draft) => { setBookingDraft(draft); setModal({ type: "booking-article", quickArticleCategory: category }); }} addedArticleId={quickCreatedArticleId} onAddedArticleHandled={() => setQuickCreatedArticleId("")} />
+    {modal?.type === "booking" && <Modal title="Create a booking" onClose={() => { setBookingDraft(null); setBookingPhoneError(""); setModal(null); }} wide>
+      <BookingForm draft={bookingDraft} phoneError={bookingPhoneError} onPhoneChange={() => setBookingPhoneError("")} articles={articles} customers={customers} onSubmit={handleBookingSubmit} onCancel={() => { setBookingDraft(null); setBookingPhoneError(""); setModal(null); }} onAddArticle={(category, draft) => { setBookingDraft(draft); setModal({ type: "booking-article", quickArticleCategory: category }); }} addedArticleId={quickCreatedArticleId} onAddedArticleHandled={() => setQuickCreatedArticleId("")} />
     </Modal>}
     {modal?.type === "sale" && <Modal title="Record a sale" description="Record a sale without rental dates or measurements." onClose={() => setModal(null)}>
       <SaleForm onSubmit={handleSaleSubmit} onCancel={() => setModal(null)} />
@@ -1826,7 +1832,7 @@ export default function App() {
   </div>;
 }
 
-function BookingForm({ booking, draft, articles, customers, onSubmit, onCancel, onAddArticle, addedArticleId, onAddedArticleHandled }) {
+function BookingForm({ booking, draft, phoneError, onPhoneChange, articles, customers, onSubmit, onCancel, onAddArticle, addedArticleId, onAddedArticleHandled }) {
   const [selectedArticleIds, setSelectedArticleIds] = useState(booking ? bookingArticleIds(booking) : draft?.selectedArticleIds || []);
   const selectedArticles = articles.filter((item) => selectedArticleIds.includes(item.id));
   const jewelleryOnly = selectedArticles.length > 0 && selectedArticles.every((item) => item.category === "Jewellery Set");
@@ -1858,6 +1864,10 @@ function BookingForm({ booking, draft, articles, customers, onSubmit, onCancel, 
   const [amount, setAmount] = useState(booking ? String(booking.amount ?? "") : draft?.amount || "");
   const [paid, setPaid] = useState(booking ? String(booking.paid ?? "") : draft?.paid || "");
   const [returnDate, setReturnDate] = useState(booking?.returnDate || draft?.returnDate || "");
+  const phoneErrorRef = useRef(null);
+  useEffect(() => {
+    if (phoneError) phoneErrorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [phoneError]);
   useEffect(() => {
     if (!addedArticleId || selectedArticleIds.includes(addedArticleId)) return;
     const updatedIds = [...selectedArticleIds, addedArticleId];
@@ -1898,8 +1908,9 @@ function BookingForm({ booking, draft, articles, customers, onSubmit, onCancel, 
     </div>
     <div className="booking-customer-field field-full">
       <Field label="Customer name *"><input name="customerName" value={customerDetails.name} onChange={(event) => setCustomerDetails({ ...customerDetails, name: event.target.value })} placeholder="Customer name" required /></Field>
-      <Field label="Phone number 1 *"><input name="customerPhone" type="tel" inputMode="tel" autoComplete="tel" value={customerDetails.phone} onChange={(event) => setCustomerDetails({ ...customerDetails, phone: event.target.value })} placeholder="03XXXXXXXXX or +923XXXXXXXXX" required /></Field>
-      <Field label="Phone number 2 (optional)"><input name="customerPhone2" type="tel" inputMode="tel" autoComplete="tel-national" value={customerDetails.phone2} onChange={(event) => setCustomerDetails({ ...customerDetails, phone2: event.target.value })} placeholder="Optional" /></Field>
+      <Field label="Phone number 1 *"><input name="customerPhone" type="tel" inputMode="tel" autoComplete="tel" value={customerDetails.phone} onChange={(event) => { setCustomerDetails({ ...customerDetails, phone: event.target.value }); onPhoneChange(); }} placeholder="03XXXXXXXXX or +923XXXXXXXXX" required /></Field>
+      <Field label="Phone number 2 (optional)"><input name="customerPhone2" type="tel" inputMode="tel" autoComplete="tel-national" value={customerDetails.phone2} onChange={(event) => { setCustomerDetails({ ...customerDetails, phone2: event.target.value }); onPhoneChange(); }} placeholder="Optional" /></Field>
+      {phoneError && <p className="booking-phone-error" ref={phoneErrorRef} role="alert">{phoneError}</p>}
       <Field label="Address *" className="field-full"><input name="customerAddress" value={customerDetails.address} onChange={(event) => setCustomerDetails({ ...customerDetails, address: event.target.value })} placeholder="Customer address" required /></Field>
     </div>
     <Field label="Delivery date *"><DateInput name="delivery" ariaLabel="Delivery date" min={booking ? undefined : today} value={deliveryDate} onChange={(nextDate) => {
@@ -1921,7 +1932,6 @@ function BookingForm({ booking, draft, articles, customers, onSubmit, onCancel, 
         : <p className="booking-article-empty">No jewellery sets available. Add a Jewellery Set article to your collection.</p>}
       {onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={(event) => preserveDraftAndAddArticle("Jewellery Set", event.currentTarget.closest("form"))}>Add jewellery set</Button>}
     </section>
-    <div className="form-hint field-full"><ShieldCheck size={15} /><span>Availability is checked against existing reservations before confirming.</span></div>
     <div className="modal-actions"><Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={booking ? Check : CalendarDays}>{booking ? "Save changes" : "Confirm booking"}</Button></div>
   </form>;
 }
