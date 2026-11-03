@@ -848,7 +848,7 @@ tbody tr:hover { background: #fdfbfc; }
   .login-lock,.sales-login-heading,.access-back,.access-field,.access-error,.access-submit { font-size: 11px; }
   .sales-login-heading { letter-spacing: .6px; }
   .access-footer,.access-demo-warning,.access-security-note { font-size: 10px; }
-  .access-field input { min-height: 44px; font-size: 14px; }
+  .access-field input { min-height: 44px; font-size: 16px; }
   .access-submit { min-height: 44px; font-size: 12px; }
   .sales-login-grid { gap: 6px; }
   .sales-login-card { gap: 7px; padding: 7px 6px; }
