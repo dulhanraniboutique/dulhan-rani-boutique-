@@ -45,7 +45,7 @@ export function DateInput({ name, value = "", onChange, min, required = false, r
       placeholder="DD/MM/YYYY"
       aria-label={ariaLabel}
       autoComplete="off"
-      pattern="\\d{2}/\\d{2}/\\d{4}"
+      pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}"
       title="Enter date as DD/MM/YYYY"
       required={required}
       readOnly={readOnly || pickerOnly}
