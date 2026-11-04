@@ -538,7 +538,7 @@ const translations = {
   "Full access to articles, bookings, payments, reports, staff profiles, and settings.": "ملبوسات، بکنگز، ادائیگیوں، رپورٹس، عملے کی پروفائلز اور ترتیبات تک مکمل رسائی۔",
   "1 protected admin profile": "ایک محفوظ ایڈمن پروفائل",
   "Access to articles, customers, bookings, payment recording, and return updates.": "ملبوسات، گاہکوں، بکنگز، ادائیگیوں اور واپسی کی اپ ڈیٹس تک رسائی۔",
-  "Up to 6 profiles · individual PINs": "چھ پروفائلز تک · الگ الگ پن",
+  "Up to 10 profiles · individual PINs": "دس پروفائلز تک · الگ الگ پن",
   "Export statement": "اسٹیٹمنٹ ایکسپورٹ کریں",
   "Clear filters": "فلٹر صاف کریں",
   "All": "سب",
