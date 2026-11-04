@@ -748,24 +748,24 @@ function ApprovalsPage({ requests, error, onReview }) {
   </>;
 }
 
-function StaffPage({ salespeople, onAdd, onEdit, onToggle, onDelete, onChangeAdminPin }) {
+function StaffPage({ salespeople, onAdd, onEdit, onResetPin, onToggle, onDelete, onChangeAdminPin }) {
   const activeCount = salespeople.filter((person) => person.active !== false).length;
   return <>
     <PageHeader eyebrow="TEAM ACCESS" title="Staff & roles" description="Create up to six salesperson profiles and assign each person their own PIN." action actionLabel="Add salesperson" onAction={onAdd} />
     <div className="role-banner"><ShieldCheck size={21} /><div><strong>Administrator PIN protection</strong><span>Only an administrator can create or manage salesperson profiles.</span></div><button className="button button-outline" onClick={onChangeAdminPin}>Change admin PIN</button></div>
     <div className="staff-capacity"><div><Users size={18} /><strong>{activeCount} of 6</strong><span>active salesperson profiles</span></div><div className="staff-slots">{Array.from({ length: 6 }, (_, index) => <span className={index < activeCount ? "staff-slot-filled" : ""} key={index} />)}</div></div>
     <section className="panel table-panel"><div className="panel-heading table-title"><div><h2>Salesperson profiles</h2><p>PIN verification and profile access are managed by the backend.</p></div></div>
-      {salespeople.length ? <div className="table-scroll"><table><thead><tr><th>TEAM MEMBER</th><th>PHONE</th><th>ROLE</th><th>ARTICLE CREATION</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>{salespeople.map((person, index) => <tr key={person.id}>
+      {salespeople.length ? <div className="table-scroll"><table><thead><tr><th>TEAM MEMBER</th><th>PHONE</th><th>ROLE</th><th>PIN</th><th>ARTICLE CREATION</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>{salespeople.map((person, index) => <tr key={person.id}>
         <td><div className="customer-cell"><span className={`avatar avatar-${index % 4}`}>{person.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span><div><strong>{person.name}</strong><small>{person.email || "Salesperson account"}</small></div></div></td>
-        <td>{person.phone || "—"}</td><td><span className="role-pill role-sales"><UserRound size={13} />Salesperson</span></td><td><Status>{person.canCreateArticles ? "Allowed" : "Booking only"}</Status></td><td><Status>{person.active === false ? "Inactive" : "Active"}</Status></td>
-        <td><div className="staff-actions"><button className="button button-outline staff-action" onClick={() => onEdit(person)}><Pencil size={13} />Edit / PIN</button><button className="button button-outline staff-action" onClick={() => onToggle(person.id)}>{person.active === false ? "Activate" : "Deactivate"}</button><button className="icon-button staff-delete" aria-label={`Remove ${person.name}`} title="Remove profile" onClick={() => onDelete(person)}><X size={15} /></button></div></td>
+        <td>{person.phone || "—"}</td><td><span className="role-pill role-sales"><UserRound size={13} />Salesperson</span></td><td><Status>Protected</Status></td><td><Status>{person.canCreateArticles ? "Allowed" : "Booking only"}</Status></td><td><Status>{person.active === false ? "Inactive" : "Active"}</Status></td>
+        <td><div className="staff-actions"><button className="button button-outline staff-action" onClick={() => onEdit(person)}><Pencil size={13} />Edit profile</button><button className="button button-outline staff-action" onClick={() => onResetPin(person)}>Reset PIN</button><button className="button button-outline staff-action" onClick={() => onToggle(person.id)}>{person.active === false ? "Activate" : "Deactivate"}</button><button className="icon-button staff-delete" aria-label={`Remove ${person.name}`} title="Remove profile" onClick={() => onDelete(person)}><X size={15} /></button></div></td>
       </tr>)}</tbody></table></div> : <EmptyState title="No salesperson profiles yet" detail="Add your first profile. Salespeople will sign in with their own PIN." />}
     </section>
     <div className="permission-cards"><div className="permission-card"><ShieldCheck size={20} /><strong>Administrator</strong><span>Full access to articles, bookings, payments, reports, staff profiles, and settings.</span><small>1 protected admin profile</small></div><div className="permission-card"><UserRound size={20} /><strong>Salesperson</strong><span>Access to articles, customers, bookings, payment recording, and return updates.</span><small>Up to 6 profiles · individual PINs</small></div></div>
   </>;
 }
 
-function StaffForm({ person, onSave, onCancel, onDelete }) {
+function StaffForm({ person, onSave, onCancel, onDelete, resetPinOnly = false }) {
   const [name, setName] = useState(person?.name || "");
   const [phone, setPhone] = useState(person?.phone || "");
   const [email, setEmail] = useState(person?.email || "");
@@ -777,14 +777,17 @@ function StaffForm({ person, onSave, onCancel, onDelete }) {
   const submit = async (event) => {
     event.preventDefault();
     setError("");
-    if (!name.trim()) { setError("Enter the salesperson’s name."); return; }
+    if (!resetPinOnly && !name.trim()) { setError("Enter the salesperson’s name."); return; }
+    if (resetPinOnly && !validPin(pin)) { setError("New PIN must contain 4 to 6 digits."); return; }
     if (!person && !validPin(pin)) { setError("Create a 4 to 6 digit PIN for this profile."); return; }
     if (pin && !validPin(pin)) { setError("PIN must contain 4 to 6 digits."); return; }
     if (pin && pin !== confirmPin) { setError("The PIN entries do not match."); return; }
     if (!person && !pin) { setError("Create a PIN for this profile."); return; }
     setSaving(true);
     try {
-      await onSave({ id: person?.id, name: name.trim(), phone: phone.trim(), email: email.trim(), canCreateArticles, pin: pin || null });
+      await onSave(resetPinOnly
+        ? { id: person.id, pin, resetPinOnly: true }
+        : { id: person?.id, name: name.trim(), phone: phone.trim(), email: email.trim(), canCreateArticles, pin: pin || null });
     } catch (saveError) {
       setError(saveError.message || "Could not save this profile. Please try again.");
     } finally {
@@ -792,14 +795,14 @@ function StaffForm({ person, onSave, onCancel, onDelete }) {
     }
   };
   return <form className="form-grid" onSubmit={submit}>
-    <Field label="Full name *" className="field-full"><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Salesperson name" required /></Field>
+    {!resetPinOnly && <><Field label="Full name *" className="field-full"><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Salesperson name" required /></Field>
     <Field label="Phone number"><input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+92 300 0000000" /></Field>
     <Field label="Email address"><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Optional" /></Field>
-    <label className={`settings-toggle field-full${canCreateArticles ? " settings-toggle-on" : ""}`}><span className="settings-toggle-copy"><strong>Can create articles during booking</strong><small>Allows adding articles to shared inventory and searching inventory in bookings. Without it, this profile can enter a booking-only article name and photo.</small></span><input type="checkbox" checked={canCreateArticles} onChange={(event) => setCanCreateArticles(event.target.checked)} /></label>
-    <Field label={person ? "New PIN (optional)" : "Create PIN *"}><input type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder={person ? "Leave blank to keep current" : "4–6 digits"} autoComplete="new-password" required={!person} /></Field>
-    {(!person || pin) && <Field label="Confirm PIN *"><input type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={confirmPin} onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="Re-enter PIN" autoComplete="new-password" required={!person || Boolean(pin)} /></Field>}
+    <label className={`settings-toggle field-full${canCreateArticles ? " settings-toggle-on" : ""}`}><span className="settings-toggle-copy"><strong>Can create articles during booking</strong><small>Allows adding articles to shared inventory and searching inventory in bookings. Without it, this profile can enter a booking-only article name and photo.</small></span><input type="checkbox" checked={canCreateArticles} onChange={(event) => setCanCreateArticles(event.target.checked)} /></label></>}
+    <Field label={person ? "New PIN *" : "Create PIN *"}><input autoFocus={resetPinOnly} type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="4–6 digits" autoComplete="new-password" required={!person || resetPinOnly} /></Field>
+    {(!person || pin || resetPinOnly) && <Field label="Confirm PIN *"><input type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={confirmPin} onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="Re-enter PIN" autoComplete="new-password" required={!person || Boolean(pin) || resetPinOnly} /></Field>}
     {error && <p className="form-error field-full" role="alert">{error}</p>}
-    <div className="modal-actions">{person && <button className="button button-danger" type="button" onClick={() => onDelete(person)}>Remove profile</button>}<Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={Check} disabled={saving}>{saving ? "Saving…" : person ? "Save profile" : "Create profile"}</Button></div>
+    <div className="modal-actions">{person && !resetPinOnly && <button className="button button-danger" type="button" onClick={() => onDelete(person)}>Remove profile</button>}<Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={Check} disabled={saving}>{saving ? "Saving…" : resetPinOnly ? "Set new PIN" : person ? "Save profile" : "Create profile"}</Button></div>
   </form>;
 }
 
@@ -1478,7 +1481,7 @@ export default function App() {
       notify("You can create a maximum of six salesperson profiles.");
       return;
     }
-    const { id, pin, ...profileDetails } = details;
+    const { id, pin, resetPinOnly, ...profileDetails } = details;
     const updated = id
       ? await saveProfile(id, { ...profileDetails, ...(pin ? { pin } : {}) })
       : await createStaff({ ...profileDetails, pin });
@@ -1486,7 +1489,7 @@ export default function App() {
       ? current.map((person) => person.id === id ? updated : person)
       : [...current, updated]);
     setModal(null);
-    notify(id ? "Salesperson profile updated." : "Salesperson profile created.");
+    notify(resetPinOnly ? "Salesperson PIN reset successfully." : id ? "Salesperson profile updated." : "Salesperson profile created.");
   };
   const handleStaffDelete = async (person) => {
     if (!window.confirm(`Move ${person.name}'s profile to Recently deleted? It can be restored for three days.`)) return;
@@ -1891,6 +1894,7 @@ export default function App() {
     }
     setModal({ type: "staff-create" });
   };
+  const openResetStaffPin = (person) => setModal({ type: "staff-pin-reset", person });
   const dashboardBookings = bookings;
   const pendingApprovalCount = approvalRequests.filter((item) => item.status === "Pending").length;
   const deliveryPrepCount = deliveryPrepBookings(bookings, articles, prepDateRange)
@@ -1915,7 +1919,7 @@ export default function App() {
       case "tomorrow": return <TomorrowDeliveriesPage bookings={bookings} articles={articles} dateRange={prepDateRange} onRangeChange={setPrepDateRange} onToggleReady={togglePrepReady} isAdmin={role === "admin"} />;
       case "calendar": return <CalendarPage bookings={bookings} articles={articles} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} />;
       case "reports": return <ReportsPage bookings={bookings} payments={payments} articles={articles} />;
-      case "staff": return <StaffPage salespeople={salespeople} onAdd={openAddStaff} onEdit={(person) => setModal({ type: "staff-edit", person })} onToggle={handleStaffToggle} onDelete={handleStaffDelete} onChangeAdminPin={() => setModal({ type: "admin-pin" })} />;
+      case "staff": return <StaffPage salespeople={salespeople} onAdd={openAddStaff} onEdit={(person) => setModal({ type: "staff-edit", person })} onResetPin={openResetStaffPin} onToggle={handleStaffToggle} onDelete={handleStaffDelete} onChangeAdminPin={() => setModal({ type: "admin-pin" })} />;
       case "settings": return <SettingsPage language={language} onLanguageChange={setLanguage} business={businessSettings} onSaveBusiness={setBusinessSettings} notifications={notificationSettings} onNotificationsChange={setNotificationSettings} onChangeAdminPin={() => setModal({ type: "admin-pin" })} onManageStaff={() => nav("staff")} onNotify={notify} />;
       case "profile": return <ProfilePage profile={currentProfile} role={role} onEdit={() => setModal({ type: "profile-edit" })} />;
       default: return <Dashboard articles={articles} bookings={dashboardBookings} payments={payments} role={role} profile={currentProfile} onNavigate={nav} />;
@@ -1986,6 +1990,9 @@ export default function App() {
     </Modal>}
     {modal?.type === "staff-edit" && <Modal title="Manage salesperson profile" description={`Update ${modal.person.name}'s details or reset their PIN.`} onClose={() => setModal(null)}>
       <StaffForm key={modal.person.id} person={modal.person} onSave={handleStaffSave} onCancel={() => setModal(null)} onDelete={handleStaffDelete} />
+    </Modal>}
+    {modal?.type === "staff-pin-reset" && <Modal title="Reset salesperson PIN" description={`Choose a new 4–6 digit sign-in PIN for ${modal.person.name}. Their current PIN cannot be viewed.`} onClose={() => setModal(null)}>
+      <StaffForm key={`pin-${modal.person.id}`} person={modal.person} resetPinOnly onSave={handleStaffSave} onCancel={() => setModal(null)} />
     </Modal>}
     {modal?.type === "admin-pin" && <Modal title="Change administrator PIN" description="Confirm your current PIN before choosing a new one." onClose={() => setModal(null)}>
       <AdminPinForm onSave={handleAdminPinUpdate} onCancel={() => setModal(null)} />
