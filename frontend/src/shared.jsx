@@ -19,7 +19,7 @@ const displayToIsoDate = (value) => {
   return `${year}-${month}-${day}`;
 };
 
-export function DateInput({ name, value = "", onChange, min, required = false, readOnly = false, ariaLabel }) {
+export function DateInput({ name, value = "", onChange, min, required = false, readOnly = false, pickerOnly = false, ariaLabel }) {
   const [displayValue, setDisplayValue] = useState(() => isoToDisplayDate(value));
   const pickerRef = useRef(null);
 
@@ -37,7 +37,7 @@ export function DateInput({ name, value = "", onChange, min, required = false, r
     else pickerRef.current?.click();
   };
 
-  return <div className={`date-input${readOnly ? " date-input-readonly" : ""}`}>
+  return <div className={`date-input${readOnly ? " date-input-readonly" : ""}${pickerOnly ? " date-input-picker-only" : ""}`}>
     <input
       type="text"
       inputMode="numeric"
@@ -48,9 +48,10 @@ export function DateInput({ name, value = "", onChange, min, required = false, r
       pattern="\\d{2}/\\d{2}/\\d{4}"
       title="Enter date as DD/MM/YYYY"
       required={required}
-      readOnly={readOnly}
+      readOnly={readOnly || pickerOnly}
       onClick={!readOnly ? openPicker : undefined}
       onChange={(event) => {
+        if (pickerOnly) return;
         const nextValue = event.target.value.replace(/[^\d/]/g, "").slice(0, 10);
         updateDisplay(nextValue);
         const isoValue = displayToIsoDate(nextValue);

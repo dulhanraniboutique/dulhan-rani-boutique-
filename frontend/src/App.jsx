@@ -5,7 +5,7 @@ import {
   Gem, LogOut, Menu, MoreHorizontal, Plus, Search, Settings, ShieldCheck, Shirt, ShoppingCart,
   SlidersHorizontal, Sparkles, Users, Wallet, X, UserRound, Truck, LockKeyhole,
   RotateCcw, RefreshCw, ChartNoAxesCombined, CreditCard, Eye, Pencil, AlertTriangle, Trash2,
-  ArrowLeft, CheckCircle2, XCircle, Phone,
+  CheckCircle2, XCircle, Phone,
 } from "lucide-react";
 import { seedArticles, seedBookings, seedCustomers, seedPayments } from "./data.js";
 import AccessScreen from "./AccessScreen.jsx";
@@ -395,14 +395,14 @@ function BookingsPage({ bookings, articles, query, onQueryChange, onNew, onView,
         const firstPhoto = articleRecords.find((article) => article.photo)?.photo;
         return <tr key={booking.id} onClick={() => onView(booking)} className="clickable-row">
           <td><div className="booking-bill-actions"><button className="booking-receipt-action" onClick={(event) => { event.stopPropagation(); onView(booking); }} aria-label={`View bill for booking ${booking.id}`}><Eye size={15} /><span>View bill</span></button>
-            {booking.amount > booking.paid && ["Confirmed", "Out"].includes(booking.status) && <Button variant="small" icon={Wallet} onClick={(event) => { event.stopPropagation(); onRecordPayment(booking); }}>Receive balance</Button>}</div></td>
+            {booking.status === "Confirmed" && booking.amount > booking.paid && <Button variant="small" icon={Wallet} onClick={(event) => { event.stopPropagation(); onRecordPayment(booking); }}>Receive balance</Button>}
+            {booking.status === "Confirmed" && booking.amount <= booking.paid && <Button variant="small" icon={Truck} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Out"); }}>Mark picked up</Button>}
+            {booking.status === "Out" && <Button variant="small" icon={Check} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Returned"); }}>Confirm return</Button>}</div></td>
           <td className="strong-cell">{booking.id}</td><td><strong>{booking.customer}</strong><small className="sub-cell">{booking.phone}</small></td>
           <td><div className="booking-article-cell">{firstPhoto ? <img src={firstPhoto} alt="" /> : <span className="booking-article-thumbnail-placeholder"><Shirt size={16} /></span>}<span><b className="article-id">{bookingArticleLabels(booking) || "No article"}</b><small className="sub-cell">{bookingArticleTitles(booking) || "—"}</small></span></div></td>
           <td>{readableDate(booking.bookingDate)}</td><td>{readableDate(booking.delivery)}</td><td>{readableDate(booking.returnDate)}</td>
           <td><strong>{currency(booking.amount)}</strong><small className="sub-cell">{booking.amount > booking.paid ? `${currency(booking.amount - booking.paid)} due` : "Paid"}</small></td>
           <td><Status>{booking.status}</Status></td><td><div className="booking-row-actions">
-            {booking.status === "Confirmed" && booking.amount <= booking.paid && <Button variant="small" icon={Truck} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Out"); }}>Mark picked up</Button>}
-            {booking.status === "Out" && <Button variant="small" icon={Check} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Returned"); }}>Confirm return</Button>}
             {isAdmin && <div className="booking-admin-actions"><button className="icon-button" onClick={(event) => { event.stopPropagation(); onEdit(booking); }} aria-label={`Edit booking ${booking.id}`}><Pencil size={15} /></button><button className="icon-button booking-delete-button" onClick={(event) => { event.stopPropagation(); onDelete(booking); }} aria-label={`Delete booking ${booking.id}`}><Trash2 size={15} /></button></div>}
           </div></td></tr>;
       })}</tbody></table>
@@ -418,8 +418,8 @@ function SalesPage({ sales, query, onQueryChange, onNew, onEdit, onDelete }) {
     <PageHeader eyebrow="RETAIL SALES" title="Sales" description="Record and review boutique sales separately from rental bookings." action actionLabel="Record sale" actionIcon={Plus} onAction={onNew} />
     <div className="booking-stats"><MiniMetric label="Sales total" value={currency(total)} /><MiniMetric label="Received" value={currency(received)} tone="green" /><MiniMetric label="Balance due" value={currency(Math.max(total - received, 0))} tone="orange" /><MiniMetric label="Transactions" value={filtered.length} tone="plum" /></div>
     <div className="toolbar"><div className="toolbar-search"><Search size={16} /><input placeholder="Search sale, customer or item..." value={query} onChange={(event) => onQueryChange(event.target.value)} /></div></div>
-    <section className="panel table-panel"><div className="table-scroll"><table><thead><tr><th>DATE</th><th>SALE ID</th><th>CUSTOMER</th><th>ITEM / DESCRIPTION</th><th>AMOUNT</th><th>PAID</th><th>BALANCE</th><th>SOLD BY</th><th>ACTIONS</th></tr></thead>
-      <tbody>{filtered.map((sale) => <tr key={sale.id}><td>{readableDate(sale.date)}</td><td className="strong-cell">{sale.id}</td><td><strong>{sale.customer}</strong><small className="sub-cell">{sale.phone || "—"}</small></td><td>{sale.itemDescription}</td><td>{currency(sale.amount)}</td><td>{currency(sale.paid)}</td><td>{currency(Math.max(Number(sale.amount) - Number(sale.paid), 0))}</td><td>{sale.createdBy || "—"}</td><td><div className="booking-admin-actions"><button className="icon-button" onClick={() => onEdit(sale)} aria-label={`Edit sale ${sale.id}`}><Pencil size={15} /></button><button className="icon-button booking-delete-button" onClick={() => onDelete(sale)} aria-label={`Delete sale ${sale.id}`}><Trash2 size={15} /></button></div></td></tr>)}</tbody>
+    <section className="panel table-panel"><div className="table-scroll"><table><thead><tr><th>DATE</th><th>DELIVERY DATE</th><th>SALE ID</th><th>CUSTOMER</th><th>ITEM / DESCRIPTION</th><th>AMOUNT</th><th>PAID</th><th>BALANCE</th><th>SOLD BY</th><th>ACTIONS</th></tr></thead>
+      <tbody>{filtered.map((sale) => <tr key={sale.id}><td>{readableDate(sale.date)}</td><td>{readableDate(sale.deliveryDate)}</td><td className="strong-cell">{sale.id}</td><td><strong>{sale.customer}</strong><small className="sub-cell">{sale.phone || "—"}</small></td><td>{sale.itemDescription}</td><td>{currency(sale.amount)}</td><td>{currency(sale.paid)}</td><td>{currency(Math.max(Number(sale.amount) - Number(sale.paid), 0))}</td><td>{sale.createdBy || "—"}</td><td><div className="booking-admin-actions"><button className="icon-button" onClick={() => onEdit(sale)} aria-label={`Edit sale ${sale.id}`}><Pencil size={15} /></button><button className="icon-button booking-delete-button" onClick={() => onDelete(sale)} aria-label={`Delete sale ${sale.id}`}><Trash2 size={15} /></button></div></td></tr>)}</tbody>
       </table>{filtered.length === 0 && <EmptyState title="No sales found" detail={query ? "Try another search or record a new sale." : "Your recorded sales will appear here."} />}</div></section>
   </>;
 }
@@ -1092,6 +1092,29 @@ export default function App() {
     return () => document.body.classList.remove("printing-receipt");
   }, [modal?.type]);
   useEffect(() => {
+    if (!modal && !mobileNav) return undefined;
+    const scrollY = window.scrollY;
+    const body = document.body;
+    const previousStyles = {
+      position: body.style.position,
+      top: body.style.top,
+      left: body.style.left,
+      right: body.style.right,
+      width: body.style.width,
+      overflow: body.style.overflow,
+    };
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.left = "0";
+    body.style.right = "0";
+    body.style.width = "100%";
+    body.style.overflow = "hidden";
+    return () => {
+      Object.assign(body.style, previousStyles);
+      window.scrollTo(0, scrollY);
+    };
+  }, [Boolean(modal), mobileNav]);
+  useEffect(() => {
     const root = document.documentElement;
     const content = document.getElementById("root");
     const isUrdu = language === "ur";
@@ -1694,10 +1717,11 @@ export default function App() {
   const handleSaleSubmit = async (event, editingSaleId = null) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const amount = Number(form.get("amount"));
     const paid = Number(form.get("paid"));
+    const existingSale = editingSaleId && sales.find((item) => item.id === editingSaleId);
+    const amount = existingSale ? Number(existingSale.amount) : paid;
     if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(paid) || paid < 0 || paid > amount) {
-      notify("Enter a valid sale amount and payment not greater than the total.");
+      notify("Enter a valid amount received no greater than the sale amount.");
       return;
     }
     const sale = {
@@ -1706,6 +1730,7 @@ export default function App() {
       customer: form.get("customer").trim(),
       phone: form.get("phone").trim(),
       itemDescription: form.get("itemDescription").trim(),
+      deliveryDate: String(form.get("deliveryDate") || ""),
       amount,
       paid,
       method: form.get("method"),
@@ -1798,6 +1823,7 @@ export default function App() {
       notify("Only a booking marked as picked up can be returned.");
       return;
     }
+    if (!window.confirm(`Confirm that ${bookingArticleTitles(booking) || "the booked articles"} were returned by ${booking.customer}?`)) return;
     const bookingIds = bookingArticleIds(booking);
     const articleHasOtherActiveBooking = (articleId) => bookings.some((item) => item.id !== bookingId && bookingArticleIds(item).includes(articleId) && !["Returned", "Cancelled"].includes(item.status));
     setBookings(bookings.map((item) => item.id === bookingId ? { ...item, status: "Returned", actualReturn: today } : item));
@@ -1811,6 +1837,7 @@ export default function App() {
         notify("Record the remaining payment before marking this booking as picked up.");
         return;
       }
+      if (!window.confirm(`Confirm that booking ${booking.id} for ${booking.customer} has been picked up?`)) return;
       setBookings(bookings.map((item) => item.id === booking.id ? { ...item, status: "Out", pickedUpAt: today } : item));
       notify(`Booking ${booking.id} marked as picked up. Payment is clear.`);
       return;
@@ -1888,7 +1915,7 @@ export default function App() {
         {group.items.map(({ id, label, icon: Icon, badge }) => <button key={id} className={`nav-item ${activePage === id ? "nav-active" : ""}`} onClick={() => nav(id)}><Icon size={18} strokeWidth={1.8} /><span>{label}</span>{(badge || id === "tomorrow") && <small className="nav-badge">{badge === "approvals" ? pendingApprovalCount : id === "articles" ? articles.length : id === "tomorrow" ? deliveryPrepCount : bookings.filter((booking) => !["Returned", "Cancelled"].includes(booking.status) && booking.returnDate >= today).length}</small>}</button>)}</div>)}</nav>
       <div className="sidebar-bottom"><div className="support-card"><span className="support-sparkle"><Sparkles size={16} /></span><strong>Need a hand?</strong><span>We’re here to help you get started.</span><button onClick={() => notify("Help center will be available soon.")}>Visit help center <ChevronRight size={14} /></button></div><button className="sidebar-profile" onClick={() => nav("profile")}><span className="avatar avatar-plum">{currentProfile.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span><span><strong>{currentProfile.name}</strong><small>{role === "admin" ? "Administrator" : "Salesperson"}</small></span><MoreHorizontal size={17} /></button></div>
     </aside>
-    <main className="main-area"><header className="topbar"><div className="topbar-left">{(activePage !== "dashboard" || modal) && <button className="topbar-back icon-button" onClick={() => window.history.back()} aria-label="Go back"><ArrowLeft size={19} /></button>}<button className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="Open menu"><Menu size={21} /></button><div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>{pageTitles[activePage]}</strong></div></div>
+    <main className="main-area"><header className="topbar"><div className="topbar-left"><button className="mobile-menu icon-button" onClick={() => setMobileNav(true)} aria-label="Open menu"><Menu size={21} /></button><div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>{pageTitles[activePage]}</strong></div></div>
       <div className="topbar-right"><Button icon={Plus} onClick={() => nav("new-booking")} className="topbar-create-booking" aria-label="Create booking"><span>Create Booking</span></Button><label className="global-search"><Search size={16} /><input placeholder="Search anything..." value={query} onChange={(event) => setQuery(event.target.value)} /><kbd>⌘ K</kbd></label>
         <div className="notification-wrap"><button className="icon-button notification-button" aria-label="Notifications" onClick={() => setNotificationsOpen(!notificationsOpen)}><Bell size={18} />{hasNotifications && <i />}</button>
           {notificationsOpen && <div className="notification-popover"><strong>Notifications</strong>
@@ -1980,7 +2007,6 @@ function BookingForm({ booking, draft, formError, onErrorChange, articles, custo
   const toggleArticle = (article, checked) => {
     const nextIds = checked ? [...selectedArticleIds, article.id] : selectedArticleIds.filter((id) => id !== article.id);
     setSelectedArticleIds(nextIds);
-    setAmount(String(articles.filter((item) => nextIds.includes(item.id)).reduce((sum, item) => sum + item.price, 0)));
   };
   const previousCustomer = booking && customers.find((customer) => customer.id === booking.customerId || customer.name === booking.customer);
   const [customerDetails, setCustomerDetails] = useState({
@@ -2000,7 +2026,6 @@ function BookingForm({ booking, draft, formError, onErrorChange, articles, custo
     if (!addedArticleId || selectedArticleIds.includes(addedArticleId)) return;
     const updatedIds = [...selectedArticleIds, addedArticleId];
     setSelectedArticleIds(updatedIds);
-    setAmount((current) => current || String(articles.filter((item) => updatedIds.includes(item.id)).reduce((sum, item) => sum + item.price, 0)));
     setArticleSearch("");
     onAddedArticleHandled();
   }, [addedArticleId]);
@@ -2043,8 +2068,8 @@ function BookingForm({ booking, draft, formError, onErrorChange, articles, custo
     <Field label="Delivery date *"><DateInput name="delivery" ariaLabel="Delivery date" min={booking ? undefined : today} value={deliveryDate} onChange={(nextDate) => {
       setDeliveryDate(nextDate);
       setReturnDate(nextDate ? dateAfter(nextDate, 2) : "");
-    }} required /></Field>
-    <Field label="Expected return date *"><DateInput name="returnDate" ariaLabel="Expected return date" min={deliveryDate || (booking ? undefined : today)} value={returnDate} onChange={setReturnDate} required /></Field>
+    }} required pickerOnly /></Field>
+    <Field label="Expected return date *"><DateInput name="returnDate" ariaLabel="Expected return date" min={deliveryDate || (booking ? undefined : today)} value={returnDate} onChange={setReturnDate} required pickerOnly /></Field>
     <Field label="Agreed rental price (PKR) *"><input type="number" name="amount" min="1" placeholder="Enter rental price" value={amount} onChange={(event) => setAmount(event.target.value)} required />
       {selectedArticles.length > 0 && <small className="suggested-price">Suggested total for {selectedArticles.length} article{selectedArticles.length === 1 ? "" : "s"}: {currency(selectedArticles.reduce((sum, item) => sum + item.price, 0))}</small>}</Field>
     <Field label={booking ? "Advance received (PKR)" : "Advance payment (PKR)"}><input type="number" name="paid" min="0" value={paid} onChange={(event) => setPaid(event.target.value)} readOnly={Boolean(booking)} />{booking && <small className="suggested-price">Payments are managed from the Payments page.</small>}</Field>
@@ -2066,15 +2091,15 @@ function BookingForm({ booking, draft, formError, onErrorChange, articles, custo
 
 function SaleForm({ sale, onSubmit, onCancel }) {
   const [date, setDate] = useState(sale?.date || today);
-  const [amount, setAmount] = useState(sale ? String(sale.amount) : "");
   const [paid, setPaid] = useState(sale ? String(sale.paid) : "");
+  const [deliveryDate, setDeliveryDate] = useState(sale?.deliveryDate || "");
   return <form className="form-grid sale-form" onSubmit={onSubmit}>
     <Field label="Sale date *"><DateInput name="date" ariaLabel="Sale date" value={date} onChange={setDate} required /></Field>
+    <Field label="Delivery date (optional)"><DateInput name="deliveryDate" ariaLabel="Optional delivery date" value={deliveryDate} onChange={setDeliveryDate} pickerOnly /></Field>
     <Field label="Customer name *"><input name="customer" defaultValue={sale?.customer || ""} placeholder="Customer name" required /></Field>
     <Field label="Phone number"><input name="phone" type="tel" defaultValue={sale?.phone || ""} placeholder="Optional" /></Field>
     <Field label="Item / sale details *" className="field-full"><input name="itemDescription" defaultValue={sale?.itemDescription || ""} placeholder="Describe the item or sale" required /></Field>
-    <Field label="Sale total (PKR) *"><input name="amount" type="number" min="1" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Enter sale total" required /></Field>
-    <Field label="Amount received (PKR)"><input name="paid" type="number" min="0" max={amount || undefined} value={paid} onChange={(event) => setPaid(event.target.value)} /></Field>
+    <Field label="Amount received (PKR) *"><input name="paid" type="number" min={sale ? 0 : 1} value={paid} onChange={(event) => setPaid(event.target.value)} placeholder="Enter amount received" required /></Field>
     <Field label="Payment method"><select name="method" defaultValue={sale?.method || "Cash"}><option>Cash</option><option>Bank transfer</option><option>JazzCash</option><option>Easypaisa</option></select></Field>
     <Field label="Notes" className="field-full"><textarea name="notes" rows="2" defaultValue={sale?.notes || ""} placeholder="Optional notes..." /></Field>
     <div className="sale-balance-summary field-full"><span>Balance due</span><strong>{currency(Math.max(Number(amount || 0) - Number(paid || 0), 0))}</strong></div>

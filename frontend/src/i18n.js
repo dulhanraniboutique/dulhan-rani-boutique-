@@ -31,7 +31,7 @@ const translations = {
   "Sale date *": "سیل کی تاریخ *",
   "Customer name *": "گاہک کا نام *",
   "Item / sale details *": "آئٹم / سیل کی تفصیل *",
-  "Sale total (PKR) *": "سیل کی کل رقم (روپے) *",
+  "Delivery date (optional)": "ڈیلیوری کی تاریخ (اختیاری)",
   "Amount received (PKR)": "وصول شدہ رقم (روپے)",
   "Payment method": "ادائیگی کا طریقہ",
   "Balance due": "باقی رقم",
