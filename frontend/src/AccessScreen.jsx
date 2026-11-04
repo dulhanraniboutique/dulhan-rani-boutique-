@@ -89,8 +89,8 @@ export default function AccessScreen({ adminProfile, adminPin, salespeople, auth
         <button className="login-profile admin-login-card" onClick={() => choose({ role: "admin", id: "admin", profile: adminProfile })}>
           <span className="login-avatar login-admin"><ShieldCheck size={20} /></span><span className="login-profile-copy"><strong>Administrator</strong><small>{adminPin ? adminProfile.name : "Set up the admin profile"}</small></span><span className="login-lock"><LockKeyhole size={15} />{adminPin ? "PIN" : "Setup"}<ArrowRight size={14} /></span>
         </button>
-        <div className="sales-login-heading"><span>SALESPERSON PROFILES</span><span>{salespeople.filter((user) => user.active !== false).length} / 6</span></div>
-        <div className="sales-login-grid">{Array.from({ length: 6 }, (_, index) => {
+        <div className="sales-login-heading"><span>SALESPERSON PROFILES</span><span>{salespeople.filter((user) => user.active !== false).length} / 10</span></div>
+        <div className="sales-login-grid">{Array.from({ length: 10 }, (_, index) => {
           const user = salespeople.filter((item) => item.active !== false)[index];
           return user ? <button className="login-profile sales-login-card" key={user.id} onClick={() => choose({ role: "sales", id: user.id, profile: user, pinRecord: user.pin })}>
             <span className="login-avatar login-sales"><UserRound size={18} /></span><span className="login-profile-copy"><strong>{user.name}</strong><small>{user.title || "Salesperson"}</small></span><LockKeyhole className="sales-lock" size={14} />

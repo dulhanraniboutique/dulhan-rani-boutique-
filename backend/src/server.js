@@ -676,8 +676,8 @@ app.post("/api/auth/profiles", requireAuth, requireAdmin, async (request, respon
 
     const db = await getDatabase();
     const accounts = db.collection("accounts");
-    if (await accounts.countDocuments({ role: "sales", active: { $ne: false } }) >= 6) {
-      response.status(409).json({ error: "A maximum of six active salesperson profiles is allowed." });
+    if (await accounts.countDocuments({ role: "sales", active: { $ne: false } }) >= 10) {
+      response.status(409).json({ error: "A maximum of ten active salesperson profiles is allowed." });
       return;
     }
     const account = {
@@ -820,8 +820,8 @@ app.post("/api/auth/profiles/:id/restore", requireAuth, requireAdmin, async (req
       response.status(404).json({ error: "The deleted salesperson profile has expired or no longer exists." });
       return;
     }
-    if (await accounts.countDocuments({ role: "sales", active: { $ne: false }, deletedAt: { $exists: false } }) >= 6) {
-      response.status(409).json({ error: "A maximum of six active salesperson profiles is allowed. Deactivate another profile before restoring this one." });
+    if (await accounts.countDocuments({ role: "sales", active: { $ne: false }, deletedAt: { $exists: false } }) >= 10) {
+      response.status(409).json({ error: "A maximum of ten active salesperson profiles is allowed. Deactivate another profile before restoring this one." });
       return;
     }
     await accounts.updateOne({ _id: account._id }, { $set: { active: true }, $unset: { deletedAt: "", deletedRecordId: "" } });

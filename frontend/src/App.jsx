@@ -803,9 +803,9 @@ function ApprovalsPage({ requests, error, onReview }) {
 function StaffPage({ salespeople, onAdd, onEdit, onResetPin, onToggle, onDelete, onChangeAdminPin }) {
   const activeCount = salespeople.filter((person) => person.active !== false).length;
   return <>
-    <PageHeader eyebrow="TEAM ACCESS" title="Staff & roles" description="Create up to six salesperson profiles and assign each person their own PIN." action actionLabel="Add salesperson" onAction={onAdd} />
+    <PageHeader eyebrow="TEAM ACCESS" title="Staff & roles" description="Create up to ten salesperson profiles and assign each person their own PIN." action actionLabel="Add salesperson" onAction={onAdd} />
     <div className="role-banner"><ShieldCheck size={21} /><div><strong>Administrator PIN protection</strong><span>Only an administrator can create or manage salesperson profiles.</span></div><button className="button button-outline" onClick={onChangeAdminPin}>Change admin PIN</button></div>
-    <div className="staff-capacity"><div><Users size={18} /><strong>{activeCount} of 6</strong><span>active salesperson profiles</span></div><div className="staff-slots">{Array.from({ length: 6 }, (_, index) => <span className={index < activeCount ? "staff-slot-filled" : ""} key={index} />)}</div></div>
+    <div className="staff-capacity"><div><Users size={18} /><strong>{activeCount} of 10</strong><span>active salesperson profiles</span></div><div className="staff-slots">{Array.from({ length: 10 }, (_, index) => <span className={index < activeCount ? "staff-slot-filled" : ""} key={index} />)}</div></div>
     <section className="panel table-panel"><div className="panel-heading table-title"><div><h2>Salesperson profiles</h2><p>PIN verification and profile access are managed by the backend.</p></div></div>
       {salespeople.length ? <div className="table-scroll"><table><thead><tr><th>TEAM MEMBER</th><th>PHONE</th><th>ROLE</th><th>PIN</th><th>ARTICLE CREATION</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>{salespeople.map((person, index) => <tr key={person.id}>
         <td><div className="customer-cell"><span className={`avatar avatar-${index % 4}`}>{person.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span><div><strong>{person.name}</strong><small>{person.email || "Salesperson account"}</small></div></div></td>
@@ -1530,8 +1530,8 @@ export default function App() {
     notify("Profile updated successfully.");
   };
   const handleStaffSave = async (details) => {
-    if (!details.id && salespeople.length >= 6) {
-      notify("You can create a maximum of six salesperson profiles.");
+    if (!details.id && salespeople.length >= 10) {
+      notify("You can create a maximum of ten salesperson profiles.");
       return;
     }
     const { id, pin, resetPinOnly, ...profileDetails } = details;
@@ -1956,8 +1956,8 @@ export default function App() {
   const openCustomerModal = () => setModal({ type: "customer" });
   const openPaymentModal = () => setModal({ type: "payment" });
   const openAddStaff = () => {
-    if (salespeople.length >= 6) {
-      notify("All six salesperson profiles have been created. Remove one to add another.");
+    if (salespeople.length >= 10) {
+      notify("All ten salesperson profiles have been created. Remove one to add another.");
       return;
     }
     setModal({ type: "staff-create" });
