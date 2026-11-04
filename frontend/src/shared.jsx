@@ -19,9 +19,18 @@ const displayToIsoDate = (value) => {
   return `${year}-${month}-${day}`;
 };
 
+const dateValidationError = (value, min) => {
+  const isoValue = displayToIsoDate(value);
+  if (!value || isoValue && (!min || isoValue >= min)) return "";
+  return min && isoValue && isoValue < min
+    ? "Date cannot be earlier than the minimum date."
+    : "Enter a valid date as DD/MM/YYYY.";
+};
+
 export function DateInput({ name, value = "", onChange, min, required = false, readOnly = false, pickerOnly = false, ariaLabel }) {
   const [displayValue, setDisplayValue] = useState(() => isoToDisplayDate(value));
   const pickerRef = useRef(null);
+  const textInputRef = useRef(null);
 
   useEffect(() => {
     setDisplayValue(isoToDisplayDate(value));
@@ -29,6 +38,7 @@ export function DateInput({ name, value = "", onChange, min, required = false, r
 
   const updateDisplay = (nextValue) => {
     setDisplayValue(nextValue);
+    textInputRef.current?.setCustomValidity(dateValidationError(nextValue, min));
     const isoValue = displayToIsoDate(nextValue);
     if ((isoValue && (!min || isoValue >= min)) || !nextValue) onChange?.(isoValue);
   };
@@ -39,13 +49,13 @@ export function DateInput({ name, value = "", onChange, min, required = false, r
 
   return <div className={`date-input${readOnly ? " date-input-readonly" : ""}${pickerOnly ? " date-input-picker-only" : ""}`}>
     <input
+      ref={textInputRef}
       type="text"
       inputMode="numeric"
       value={displayValue}
       placeholder="DD/MM/YYYY"
       aria-label={ariaLabel}
       autoComplete="off"
-      pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}"
       title="Enter date as DD/MM/YYYY"
       required={required}
       readOnly={readOnly || pickerOnly}
@@ -54,15 +64,8 @@ export function DateInput({ name, value = "", onChange, min, required = false, r
         if (pickerOnly) return;
         const nextValue = event.target.value.replace(/[^\d/]/g, "").slice(0, 10);
         updateDisplay(nextValue);
-        const isoValue = displayToIsoDate(nextValue);
-        const invalidDate = nextValue && (!isoValue || (min && isoValue < min));
-        event.target.setCustomValidity(invalidDate ? min && isoValue && isoValue < min ? "Date cannot be earlier than the minimum date." : "Enter a valid date as DD/MM/YYYY." : "");
       }}
-      onBlur={(event) => {
-        const isoValue = displayToIsoDate(displayValue);
-        const invalidDate = displayValue && (!isoValue || (min && isoValue < min));
-        event.target.setCustomValidity(invalidDate ? min && isoValue && isoValue < min ? "Date cannot be earlier than the minimum date." : "Enter a valid date as DD/MM/YYYY." : "");
-      }}
+      onBlur={() => textInputRef.current?.setCustomValidity(dateValidationError(displayValue, min))}
     />
     {!readOnly && <>
       <button type="button" className="date-picker-button" aria-label="Choose date" onClick={openPicker}><CalendarDays size={18} /></button>
