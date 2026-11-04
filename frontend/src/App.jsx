@@ -150,6 +150,7 @@ const navGroups = [
   { label: "MANAGEMENT", adminOnly: true, items: [
     { id: "approvals", label: "Approvals", icon: CheckCircle2, badge: "approvals" },
     { id: "recently-deleted", label: "Recently deleted", icon: Trash2 },
+    { id: "expenses", label: "Expenses", icon: CircleDollarSign },
     { id: "reports", label: "Reports", icon: ChartNoAxesCombined },
     { id: "staff", label: "Staff & roles", icon: ShieldCheck },
     { id: "settings", label: "Settings", icon: Settings },
@@ -426,6 +427,30 @@ function SalesPage({ sales, query, onQueryChange, onNew, onEdit, onDelete }) {
   </>;
 }
 
+function ExpensesPage({ expenses, onAdd, onDelete }) {
+  const [date, setDate] = useState(today);
+  const dailyExpenses = expenses
+    .filter((expense) => expense.date === date)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  const total = dailyExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  return <>
+    <PageHeader eyebrow="ADMINISTRATION" title="Expenses" description="Record and review daily boutique expenses." action actionLabel="Add expense" onAction={onAdd} />
+    <div className="booking-stats">
+      <MiniMetric label={`Total on ${readableDate(date)}`} value={currency(total)} tone="orange" />
+      <MiniMetric label="Expenses that day" value={dailyExpenses.length} tone="plum" />
+    </div>
+    <div className="toolbar">
+      <Field label="Expense date"><DateInput ariaLabel="Expense date" value={date} onChange={setDate} /></Field>
+    </div>
+    <section className="panel table-panel"><div className="table-scroll"><table><thead><tr><th>DATE</th><th>DESCRIPTION</th><th>RECORDED BY</th><th>AMOUNT</th><th>ACTIONS</th></tr></thead>
+      <tbody>{dailyExpenses.map((expense) => <tr key={expense.id}>
+        <td>{readableDate(expense.date)}</td><td className="strong-cell">{expense.description}</td><td>{expense.createdBy || "Administrator"}</td>
+        <td className="money-cell">{currency(expense.amount)}</td><td><button className="icon-button booking-delete-button" onClick={() => onDelete(expense)} aria-label={`Delete expense ${expense.description}`}><Trash2 size={15} /></button></td>
+      </tr>)}</tbody>
+      </table>{dailyExpenses.length === 0 && <EmptyState title="No expenses for this date" detail="Add an expense to start tracking daily spending." />}</div></section>
+  </>;
+}
+
 function RecentlyDeletedPage({ records, onRestore, onPermanentlyDelete }) {
   const activeRecords = records
     .filter((entry) => Date.parse(entry.expiresAt) > Date.now())
@@ -582,6 +607,16 @@ function StaffHandoverForm({ salespeople, onSave, onCancel }) {
     <Field label="Handover date *"><DateInput ariaLabel="Handover date" value={date} onChange={setDate} required /></Field>
     {error && <p className="form-error field-full" role="alert">{error}</p>}
     <div className="modal-actions"><Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={Check} disabled={saving}>{saving ? "Recording…" : "Record handover"}</Button></div>
+  </form>;
+}
+
+function ExpenseForm({ onSubmit, onCancel }) {
+  const [date, setDate] = useState(today);
+  return <form className="form-grid" onSubmit={onSubmit}>
+    <Field label="Description *" className="field-full"><input name="description" maxLength="200" required autoFocus placeholder="e.g. Shop supplies" /></Field>
+    <Field label="Amount (PKR) *"><input name="amount" type="number" min="1" step="1" required placeholder="5000" /></Field>
+    <Field label="Expense date *"><DateInput name="date" ariaLabel="Expense date" value={date} onChange={setDate} required /></Field>
+    <div className="modal-actions"><Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={Check}>Save expense</Button></div>
   </form>;
 }
 
@@ -1003,6 +1038,7 @@ export default function App() {
   const [customers, setCustomers] = useSyncedData("customers", seedCustomers, Boolean(session));
   const [bookings, setBookings] = useSyncedData("bookings", seedBookings, Boolean(session));
   const [payments, setPayments] = useSyncedData("payments", seedPayments, Boolean(session));
+  const [expenses, setExpenses] = useSyncedData("expenses", [], session?.role === "admin");
   const [staffRemittances, setStaffRemittances] = useSyncedData("staffRemittances", [], session?.role === "admin");
   const [sales, setSales] = useSyncedData("sales", [], Boolean(session));
   const [deletedRecords, setDeletedRecords] = useSyncedData("deletedRecords", [], session?.role === "admin");
@@ -1353,6 +1389,7 @@ export default function App() {
   const pageTitles = {
     dashboard: "Dashboard", articles: "Articles", bookings: "Bookings", sales: "Sales", customers: "Customers",
     "recently-deleted": "Recently deleted",
+    expenses: "Expenses",
     "jewellery-bookings": "Jewellery Set Booking",
     payments: role === "admin" ? "Payments" : "Payments received", returns: "Returns & tracking", tomorrow: "Delivery prep", calendar: "Calendar", reports: "Reports", approvals: "Approvals",
     staff: "Staff & roles", settings: "Settings", profile: "My profile",
@@ -1955,6 +1992,32 @@ export default function App() {
   const openEditSale = (sale) => setModal({ type: "sale-edit", sale });
   const openCustomerModal = () => setModal({ type: "customer" });
   const openPaymentModal = () => setModal({ type: "payment" });
+  const handleExpenseSubmit = (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const description = String(form.get("description") || "").trim();
+    const amount = Number(form.get("amount"));
+    const date = String(form.get("date") || "");
+    if (!description || description.length > 200 || !Number.isFinite(amount) || amount <= 0 || !date) {
+      notify("Enter an expense description, a positive amount, and a valid date.");
+      return;
+    }
+    setExpenses((current) => [{
+      id: createRecordId("EXP"),
+      description,
+      amount,
+      date,
+      createdAt: new Date().toISOString(),
+      createdBy: currentProfile.name,
+    }, ...current]);
+    setModal(null);
+    notify("Expense recorded successfully.");
+  };
+  const handleExpenseDelete = (expense) => {
+    if (!window.confirm(`Delete the expense "${expense.description}" (${currency(expense.amount)})?`)) return;
+    setExpenses((current) => current.filter((item) => item.id !== expense.id));
+    notify("Expense deleted.");
+  };
   const openAddStaff = () => {
     if (salespeople.length >= 10) {
       notify("All ten salesperson profiles have been created. Remove one to add another.");
@@ -1983,6 +2046,9 @@ export default function App() {
       case "jewellery-bookings": return <BookingsPage bookings={bookings} articles={articles} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking", initialCategory: "Jewellery Set" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} jewelleryOnly />;
       case "customers": return <CustomersPage customers={customers} query={filteredQuery} onQueryChange={setQuery} onAdd={openCustomerModal} />;
       case "payments": return <PaymentsPage payments={payments} bookings={bookings} staffRemittances={staffRemittances} query={filteredQuery} onQueryChange={setQuery} onAdd={openPaymentModal} onAddHandover={() => setModal({ type: "staff-handover" })} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} salespeople={salespeople} adminProfile={profile} />;
+      case "expenses": return role === "admin"
+        ? <ExpensesPage expenses={expenses} onAdd={() => setModal({ type: "expense" })} onDelete={handleExpenseDelete} />
+        : <EmptyState title="Administrator access required" detail="Expenses are only available to an administrator." />;
       case "returns": return <ReturnsPage bookings={bookings} onReturn={handleReturn} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} />;
       case "tomorrow": return <TomorrowDeliveriesPage bookings={bookings} articles={articles} dateRange={prepDateRange} onRangeChange={setPrepDateRange} onToggleReady={togglePrepReady} isAdmin={role === "admin"} />;
       case "calendar": return <CalendarPage bookings={bookings} articles={articles} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} />;
@@ -2030,6 +2096,9 @@ export default function App() {
     </Modal>}
     {modal?.type === "sale" && <Modal title="Record a sale" description="Record a sale without rental dates or measurements." onClose={() => setModal(null)}>
       <SaleForm onSubmit={handleSaleSubmit} onCancel={() => setModal(null)} />
+    </Modal>}
+    {modal?.type === "expense" && role === "admin" && <Modal title="Add daily expense" description="Record an expense for your boutique." onClose={() => setModal(null)}>
+      <ExpenseForm onSubmit={handleExpenseSubmit} onCancel={() => setModal(null)} />
     </Modal>}
     {modal?.type === "sale-edit" && <Modal title="Edit sale" description={`Update sale ${modal.sale.id}.`} onClose={() => setModal(null)}>
       <SaleForm key={modal.sale.id} sale={modal.sale} onSubmit={(event) => handleSaleSubmit(event, modal.sale.id)} onCancel={() => setModal(null)} />

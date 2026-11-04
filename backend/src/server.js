@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 const app = express();
 const port = Number(process.env.PORT) || 4000;
 const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-const resources = new Set(["articles", "bookings", "customers", "payments", "sales", "settings", "deletedRecords", "staffRemittances"]);
+const resources = new Set(["articles", "bookings", "customers", "payments", "sales", "expenses", "settings", "deletedRecords", "staffRemittances"]);
 const pbkdf2 = promisify(derivePinHash);
 const pinIterations = 120000;
 let client;
@@ -126,7 +126,7 @@ function requireAdmin(request, response, next) {
 }
 
 function requireResourceAccess(request, response, next) {
-  if (["deletedRecords", "staffRemittances"].includes(request.params.resource) && request.account.role !== "admin") {
+  if (["deletedRecords", "staffRemittances", "expenses"].includes(request.params.resource) && request.account.role !== "admin") {
     response.status(403).json({ error: "Administrator access is required for this resource." });
     return;
   }
@@ -951,6 +951,16 @@ app.put("/api/data/:resource/sync", requireAuth, requireResourceAccess, async (r
         response.status(400).json({ error: "Every staff handover needs a valid salesperson, amount, method, date, and receiver." });
         return;
       }
+    }
+    if (request.params.resource === "expenses" && upserts.some((item) =>
+      typeof item.description !== "string" || !item.description.trim() || item.description.trim().length > 200
+      || !Number.isFinite(Number(item.amount)) || Number(item.amount) <= 0
+      || typeof item.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(item.date)
+      || Number.isNaN(Date.parse(`${item.date}T00:00:00.000Z`))
+      || new Date(`${item.date}T00:00:00.000Z`).toISOString().slice(0, 10) !== item.date
+      || typeof item.createdAt !== "string" || Number.isNaN(Date.parse(item.createdAt)))) {
+      response.status(400).json({ error: "Every expense needs a description, positive amount, and valid date." });
+      return;
     }
 
     const collection = (await connectToDatabase())
