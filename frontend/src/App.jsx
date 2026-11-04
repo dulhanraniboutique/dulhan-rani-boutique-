@@ -393,9 +393,9 @@ function BookingsPage({ bookings, articles, query, onQueryChange, onNew, onView,
         const firstPhoto = articleRecords.find((article) => article.photo)?.photo;
         return <tr key={booking.id} onClick={() => onView(booking)} className="clickable-row">
           <td><div className="booking-bill-actions"><button className="booking-receipt-action" onClick={(event) => { event.stopPropagation(); onView(booking); }} aria-label={`View bill for booking ${booking.id}`}><Eye size={15} /><span>View bill</span></button>
-            {booking.status === "Confirmed" && booking.amount > booking.paid && <Button variant="small" icon={Wallet} onClick={(event) => { event.stopPropagation(); onRecordPayment(booking); }}>Receive balance</Button>}
-            {booking.status === "Confirmed" && booking.amount <= booking.paid && <Button variant="small" icon={Truck} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Out"); }}>Mark picked up</Button>}
-            {booking.status === "Out" && <Button variant="small" icon={Check} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Returned"); }}>Confirm return</Button>}</div></td>
+            {isAdmin && booking.status === "Confirmed" && booking.amount > booking.paid && <Button variant="small" icon={Wallet} onClick={(event) => { event.stopPropagation(); onRecordPayment(booking); }}>Receive balance</Button>}
+            {isAdmin && booking.status === "Confirmed" && booking.amount <= booking.paid && <Button variant="small" icon={Truck} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Out"); }}>Mark picked up</Button>}
+            {isAdmin && booking.status === "Out" && <Button variant="small" icon={Check} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Returned"); }}>Confirm return</Button>}</div></td>
           <td className="strong-cell">{booking.id}</td><td><strong>{booking.customer}</strong><small className="sub-cell">{booking.phone}</small></td>
           <td><div className="booking-article-cell">{firstPhoto ? <img src={firstPhoto} alt="" /> : <span className="booking-article-thumbnail-placeholder"><Shirt size={16} /></span>}<span><b className="article-id">{bookingArticleLabels(booking) || "No article"}</b><small className="sub-cell">{bookingArticleTitles(booking) || "—"}</small></span></div></td>
           <td>{readableDate(booking.bookingDate)}</td><td>{readableDate(booking.delivery)}</td><td>{readableDate(booking.returnDate)}</td>
@@ -552,7 +552,7 @@ function ReturnsPage({ bookings, onReturn, onStatusChange, onRecordPayment }) {
   </>;
 }
 
-function TomorrowDeliveriesPage({ bookings, articles, dateRange, onRangeChange, onToggleReady }) {
+function TomorrowDeliveriesPage({ bookings, articles, dateRange, onRangeChange, onToggleReady, isAdmin }) {
   const deliveries = deliveryPrepBookings(bookings, articles, dateRange);
   const dressCount = deliveries.reduce((sum, booking) => sum + booking.deliveryArticles.length, 0);
   const readyCount = deliveries.reduce((sum, booking) => sum + booking.deliveryArticles.filter((article) => booking.prepReadyArticleIds?.includes(article.id)).length, 0);
@@ -612,7 +612,7 @@ function TomorrowDeliveriesPage({ bookings, articles, dateRange, onRangeChange, 
           {article.photo ? <img src={article.photo} alt={article.name} /> : <span className="prep-image-placeholder"><Shirt size={20} /></span>}
           <div className="prep-article-copy"><strong>{article.name}</strong><span>{article.id}</span>
             <div className="prep-ready-actions"><Status>{booking.prepReadyArticleIds?.includes(article.id) ? "Ready" : "Not ready"}</Status>
-              <button className="prep-ready-toggle" onClick={() => onToggleReady(booking.id, article.id)}>{booking.prepReadyArticleIds?.includes(article.id) ? "Mark not ready" : "Mark ready"}</button>
+              {isAdmin && <button className="prep-ready-toggle" onClick={() => onToggleReady(booking.id, article.id)}>{booking.prepReadyArticleIds?.includes(article.id) ? "Mark not ready" : "Mark ready"}</button>}
             </div>
           </div>
         </div>)}</div>
@@ -1887,7 +1887,7 @@ export default function App() {
       case "customers": return <CustomersPage customers={customers} query={filteredQuery} onQueryChange={setQuery} onAdd={openCustomerModal} />;
       case "payments": return <PaymentsPage payments={payments} bookings={bookings} query={filteredQuery} onQueryChange={setQuery} onAdd={openPaymentModal} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} salespeople={salespeople} adminProfile={profile} />;
       case "returns": return <ReturnsPage bookings={bookings} onReturn={handleReturn} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} />;
-      case "tomorrow": return <TomorrowDeliveriesPage bookings={bookings} articles={articles} dateRange={prepDateRange} onRangeChange={setPrepDateRange} onToggleReady={togglePrepReady} />;
+      case "tomorrow": return <TomorrowDeliveriesPage bookings={bookings} articles={articles} dateRange={prepDateRange} onRangeChange={setPrepDateRange} onToggleReady={togglePrepReady} isAdmin={role === "admin"} />;
       case "calendar": return <CalendarPage bookings={bookings} articles={articles} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} />;
       case "reports": return <ReportsPage bookings={bookings} payments={payments} articles={articles} />;
       case "staff": return <StaffPage salespeople={salespeople} onAdd={openAddStaff} onEdit={(person) => setModal({ type: "staff-edit", person })} onToggle={handleStaffToggle} onDelete={handleStaffDelete} onChangeAdminPin={() => setModal({ type: "admin-pin" })} />;

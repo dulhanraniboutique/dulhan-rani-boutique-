@@ -866,7 +866,7 @@ app.get("/api/data/:resource", requireAuth, requireResourceAccess, async (reques
     if (request.params.resource === "deletedRecords") {
       query = { expiresAt: { $gt: new Date() } };
     } else if (request.account.role === "sales") {
-      if (request.params.resource === "bookings" || request.params.resource === "sales") {
+      if (request.params.resource === "sales") {
         query = { createdById: request.account._id };
       } else if (request.params.resource === "payments") {
         query = { receivedById: request.account._id };
