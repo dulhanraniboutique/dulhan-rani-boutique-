@@ -2102,7 +2102,6 @@ function SaleForm({ sale, onSubmit, onCancel }) {
     <Field label="Amount received (PKR) *"><input name="paid" type="number" min={sale ? 0 : 1} value={paid} onChange={(event) => setPaid(event.target.value)} placeholder="Enter amount received" required /></Field>
     <Field label="Payment method"><select name="method" defaultValue={sale?.method || "Cash"}><option>Cash</option><option>Bank transfer</option><option>JazzCash</option><option>Easypaisa</option></select></Field>
     <Field label="Notes" className="field-full"><textarea name="notes" rows="2" defaultValue={sale?.notes || ""} placeholder="Optional notes..." /></Field>
-    <div className="sale-balance-summary field-full"><span>Balance due</span><strong>{currency(Math.max(Number(amount || 0) - Number(paid || 0), 0))}</strong></div>
     <div className="modal-actions"><Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={Check}>{sale ? "Save changes" : "Save sale"}</Button></div>
   </form>;
 }

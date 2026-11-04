@@ -1012,3 +1012,14 @@ tbody tr:hover { background: #fdfbfc; }
 #root .modal :where(p,span,small,td,th,label,button,input,select,textarea) { font-weight: 600; }
 #root .topbar :where(span,strong,small,button,input) { font-weight: 600; }
 #root .side-nav .nav-item span { font-weight: 700; }
+@media (max-width: 650px) {
+  #root .side-nav .nav-item > span { font-size: 16px; font-weight: 700; }
+  #root .topbar .breadcrumb { font-size: 12px; font-weight: 700; }
+  #root .topbar .breadcrumb strong { font-weight: 700; }
+  #root .page-content .lower-grid .panel-heading h2 { font-size: 16px; font-weight: 700; }
+  #root .page-content .lower-grid .panel-heading p { font-size: 13px; font-weight: 700; }
+  #root .page-content .lower-grid .table-panel th,
+  #root .page-content .lower-grid .table-panel td { font-size: 12px; font-weight: 700; }
+  #root .page-content .availability-label { font-size: 13px; font-weight: 700; }
+  #root .page-content .availability-label strong { font-size: 14px; font-weight: 700; }
+}
