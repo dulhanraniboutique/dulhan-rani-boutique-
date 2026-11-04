@@ -242,10 +242,12 @@ function Button({ children, variant = "primary", icon: Icon, onClick, type = "bu
   </button>;
 }
 
-function PageHeader({ eyebrow, title, description, action, actionLabel, actionIcon: ActionIcon = Plus, onAction, actionClassName = "" }) {
+function PageHeader({ eyebrow, title, description, action, actionLabel, actionIcon: ActionIcon = Plus, onAction, actionClassName = "", secondaryAction = false, secondaryActionLabel, secondaryActionIcon: SecondaryActionIcon = Plus, onSecondaryAction, secondaryActionClassName = "" }) {
   return <div className="page-heading">
     <div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="page-description">{description}</p></div>
-    {action && <Button icon={ActionIcon} onClick={onAction} className={actionClassName}>{actionLabel}</Button>}
+    {action && secondaryAction
+      ? <div className="page-heading-actions"><Button icon={ActionIcon} onClick={onAction} className={actionClassName}>{actionLabel}</Button><Button variant="outline" icon={SecondaryActionIcon} onClick={onSecondaryAction} className={secondaryActionClassName}>{secondaryActionLabel}</Button></div>
+      : action && <Button icon={ActionIcon} onClick={onAction} className={actionClassName}>{actionLabel}</Button>}
   </div>;
 }
 
@@ -513,7 +515,7 @@ function PaymentsPage({ payments, bookings, staffRemittances, query, onQueryChan
     .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
   const dailyHandoverTotal = dailyHandovers.reduce((sum, handover) => sum + Number(handover.amount || 0), 0);
   return <>
-    <PageHeader eyebrow="FINANCE" title={isAdmin ? "Payments" : "Payments received"} description="Track booking payments and salesperson handovers separately." action actionLabel={isAdmin ? "Record handover" : "Record payment"} actionIcon={isAdmin ? Wallet : Plus} onAction={isAdmin ? onAddHandover : onAdd} />
+    <PageHeader eyebrow="FINANCE" title={isAdmin ? "Payments" : "Payments received"} description="Track booking payments and salesperson handovers separately." action actionLabel="Record payment" actionIcon={Plus} onAction={onAdd} secondaryAction={isAdmin} secondaryActionLabel="Record handover" secondaryActionIcon={Wallet} onSecondaryAction={onAddHandover} />
     <div className="finance-cards"><FinanceCard label="Total collected" value={currency(total)} note={isAdmin ? "All recorded receipts" : "Receipts collected by you"} icon={ArrowDownLeft} tone="green" /><FinanceCard label="Outstanding balance" value={currency(due)} note="Across your active bookings" icon={Clock3} tone="orange" /><FinanceCard label="Transactions" value={visiblePayments.length} note="Recorded receipts" icon={CreditCard} tone="plum" /></div>
     <div className="toolbar"><div className="toolbar-search"><Search size={16} /><input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search by receipt, booking or customer..." /></div>{isAdmin && <Button variant="outline" icon={Plus} onClick={onAdd}>Record booking payment</Button>}<Button variant="outline" icon={Download} onClick={() => window.print()}>Export statement</Button></div>
     <section className="panel table-panel"><div className="panel-heading table-title"><div><h2>Payment history</h2><p>Recent transactions and receipts</p></div><span className="subtle-count">{filtered.length} transactions</span></div>
