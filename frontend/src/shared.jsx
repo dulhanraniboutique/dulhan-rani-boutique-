@@ -56,7 +56,6 @@ export function DateInput({ name, value = "", onChange, min, required = false, r
       placeholder="DD/MM/YYYY"
       aria-label={ariaLabel}
       autoComplete="off"
-      title="Enter date as DD/MM/YYYY"
       required={required}
       readOnly={readOnly || pickerOnly}
       onClick={!readOnly ? openPicker : undefined}
@@ -65,7 +64,6 @@ export function DateInput({ name, value = "", onChange, min, required = false, r
         const nextValue = event.target.value.replace(/[^\d/]/g, "").slice(0, 10);
         updateDisplay(nextValue);
       }}
-      onBlur={() => textInputRef.current?.setCustomValidity(dateValidationError(displayValue, min))}
     />
     {!readOnly && <>
       <button type="button" className="date-picker-button" aria-label="Choose date" onClick={openPicker}><CalendarDays size={18} /></button>
