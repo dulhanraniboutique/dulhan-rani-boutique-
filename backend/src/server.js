@@ -459,7 +459,9 @@ app.post("/api/approval-requests", requireAuth, async (request, response, next) 
       response.status(404).json({ error: "The requested record no longer exists." });
       return;
     }
-    if ((entityType === "booking" || entityType === "sale") && currentRecord.createdById !== request.account._id) {
+    if ((action === "edit" && (entityType === "booking" || entityType === "sale")
+      || entityType === "sale" && action === "delete")
+      && currentRecord.createdById !== request.account._id) {
       response.status(403).json({ error: "You can only request changes to records created by your profile." });
       return;
     }
