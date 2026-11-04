@@ -489,7 +489,17 @@ app.post("/api/approval-requests", requireAuth, async (request, response, next) 
           || !validIsoDate(proposed.delivery)
           || !validIsoDate(proposed.returnDate)
           || proposed.returnDate < proposed.delivery
-          || !Array.isArray(proposed.articles))) {
+          || !Array.isArray(proposed.articles)
+          || (proposed.manualArticles !== undefined && (!Array.isArray(proposed.manualArticles)
+            || proposed.manualArticles.length > 20
+            || proposed.manualArticles.some((article) => !article
+              || typeof article.id !== "string"
+              || typeof article.name !== "string" || !article.name.trim()
+              || article.name.length > 120
+              || typeof article.photo !== "string"
+              || article.photo.length > 14 * 1024 * 1024
+              || typeof article.category !== "string" || article.category.length > 60
+              || article.inventory !== false))))) {
         response.status(400).json({ error: "The proposed booking changes are invalid." });
         return;
       }
@@ -527,7 +537,7 @@ app.post("/api/approval-requests", requireAuth, async (request, response, next) 
     let safeProposedRecord;
     if (action === "edit") {
       const editableFields = {
-        booking: ["customer", "phone", "phone2", "address", "articles", "article", "articleName", "delivery", "returnDate", "amount", "chest", "back", "hip", "notes"],
+        booking: ["customer", "phone", "phone2", "address", "articles", "article", "articleName", "manualArticles", "delivery", "returnDate", "amount", "chest", "back", "hip", "notes"],
         article: ["name", "category", "price", "priceMin", "priceMax", "minOrder", "photo", "color"],
         sale: ["date", "customer", "phone", "itemDescription", "amount", "paid", "method", "notes"],
       }[entityType];

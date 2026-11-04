@@ -63,7 +63,7 @@ const nextCategoryArticleNumber = (articles, category) => {
 const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const bookingArticleIds = (booking) => (booking.articles?.map((article) => typeof article === "string" ? article : article.id) || (booking.article ? [booking.article] : [])).filter(Boolean);
 const bookingArticleNames = (booking) => [
-  ...(booking.articles?.map((article) => typeof article === "string" ? article : article.name).filter(Boolean) || (booking.articleName ? [booking.articleName] : [])),
+  ...(booking.articles?.map((article) => typeof article === "string" ? article : article.name).filter(Boolean) || (!booking.manualArticles?.length && booking.articleName ? [booking.articleName] : [])),
   ...(booking.manualArticles || []).map((article) => article.name).filter(Boolean),
 ];
 const bookingArticleLabels = (booking) => bookingArticleIds(booking).join(", ");
@@ -755,9 +755,9 @@ function StaffPage({ salespeople, onAdd, onEdit, onToggle, onDelete, onChangeAdm
     <div className="role-banner"><ShieldCheck size={21} /><div><strong>Administrator PIN protection</strong><span>Only an administrator can create or manage salesperson profiles.</span></div><button className="button button-outline" onClick={onChangeAdminPin}>Change admin PIN</button></div>
     <div className="staff-capacity"><div><Users size={18} /><strong>{activeCount} of 6</strong><span>active salesperson profiles</span></div><div className="staff-slots">{Array.from({ length: 6 }, (_, index) => <span className={index < activeCount ? "staff-slot-filled" : ""} key={index} />)}</div></div>
     <section className="panel table-panel"><div className="panel-heading table-title"><div><h2>Salesperson profiles</h2><p>PIN verification and profile access are managed by the backend.</p></div></div>
-      {salespeople.length ? <div className="table-scroll"><table><thead><tr><th>TEAM MEMBER</th><th>PHONE</th><th>ROLE</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>{salespeople.map((person, index) => <tr key={person.id}>
+      {salespeople.length ? <div className="table-scroll"><table><thead><tr><th>TEAM MEMBER</th><th>PHONE</th><th>ROLE</th><th>ARTICLE CREATION</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>{salespeople.map((person, index) => <tr key={person.id}>
         <td><div className="customer-cell"><span className={`avatar avatar-${index % 4}`}>{person.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span><div><strong>{person.name}</strong><small>{person.email || "Salesperson account"}</small></div></div></td>
-        <td>{person.phone || "—"}</td><td><span className="role-pill role-sales"><UserRound size={13} />Salesperson</span></td><td><Status>{person.active === false ? "Inactive" : "Active"}</Status></td>
+        <td>{person.phone || "—"}</td><td><span className="role-pill role-sales"><UserRound size={13} />Salesperson</span></td><td><Status>{person.canCreateArticles ? "Allowed" : "Booking only"}</Status></td><td><Status>{person.active === false ? "Inactive" : "Active"}</Status></td>
         <td><div className="staff-actions"><button className="button button-outline staff-action" onClick={() => onEdit(person)}><Pencil size={13} />Edit / PIN</button><button className="button button-outline staff-action" onClick={() => onToggle(person.id)}>{person.active === false ? "Activate" : "Deactivate"}</button><button className="icon-button staff-delete" aria-label={`Remove ${person.name}`} title="Remove profile" onClick={() => onDelete(person)}><X size={15} /></button></div></td>
       </tr>)}</tbody></table></div> : <EmptyState title="No salesperson profiles yet" detail="Add your first profile. Salespeople will sign in with their own PIN." />}
     </section>
@@ -1647,14 +1647,12 @@ export default function App() {
     if (existing && paid !== existing.paid) { showBookingError("Payments must be changed from the Payments page."); return; }
     const manualArticleName = String(form.get("manualArticleName") || "").trim();
     const manualArticlePhoto = String(form.get("manualArticlePhoto") || "");
-    if (selectedIds.length === 0 && (canCreateArticles || !manualArticleName)) {
-      showBookingError(canCreateArticles ? "Select an article or add a new one to continue." : "Enter an article name to continue.");
+    if (selectedIds.length === 0 && !manualArticleName) {
+      showBookingError(canCreateArticles ? "Select an inventory article, enter an article name, or add a new article." : "Enter an article name to continue.");
       return;
     }
     const normalizedArticles = selectedArticles.map(({ id, name, photo, price, category }) => ({ id, name, photo, price, category }));
-    const manualArticles = canCreateArticles
-      ? existing?.manualArticles || []
-      : manualArticleName ? [{
+    const manualArticles = manualArticleName ? [{
         id: existing?.manualArticles?.[0]?.id || createRecordId("ITEM"),
         name: manualArticleName,
         photo: manualArticlePhoto,
@@ -2092,23 +2090,25 @@ function BookingForm({ booking, draft, initialCategory, formError, onErrorChange
   };
   return <form className="form-grid" noValidate onSubmit={submitBooking}>
     <div className="booking-article-picker field-full">
-      {canCreateArticles ? <>
+      {canCreateArticles && <>
         <Field label="Category"><select aria-label="Filter articles by category" value={articleCategory} onChange={(event) => setArticleCategory(event.target.value)}><option>All categories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select></Field>
         <label className="booking-article-search"><Search size={15} /><input type="search" aria-label="Search articles for booking" placeholder="Type article name or number..." value={articleSearch} onChange={(event) => setArticleSearch(event.target.value)} /></label>
         {onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={(event) => preserveDraftAndAddArticle(articleCategory === "All categories" ? undefined : articleCategory, event.currentTarget.closest("form"))}>{articleCategory === "Jewellery Set" ? "Add new jewellery article" : "Add new article to collection"}</Button>}
         <div className="booking-article-options">{matchingArticles.map((article) => <BookingArticleOption key={article.id} article={article} selected={selectedArticleIds.includes(article.id)} onToggle={toggleArticle} />)}
         {matchingArticles.length === 0 && <p className="booking-article-empty">{articleSearch.trim() ? "No matching articles found." : "No available articles."}</p>}</div>
         {selectedArticles.length > 0 && <p className="booking-selected-count">{selectedArticles.length} article{selectedArticles.length === 1 ? "" : "s"} selected</p>}
-      </> : <>
+      </>}
+      {!canCreateArticles && <>
         {selectedArticleIds.map((id) => <input key={id} type="hidden" name="articles" value={id} />)}
         {selectedArticles.length > 0 && <p className="booking-selected-count">Current inventory articles: {selectedArticles.map((article) => article.name).join(", ")}</p>}
-        {articleCategory === "Jewellery Set" && <p className="booking-selected-count field-full">Category: Jewellery Set</p>}
-        <Field label="Article name *" className="field-full"><input name="manualArticleName" value={manualArticleName} onChange={(event) => setManualArticleName(event.target.value)} placeholder="Type the article name" required={!selectedArticleIds.length} /></Field>
-        <PhotoUpload value={manualArticlePhoto} onChange={setManualArticlePhoto} />
-        <input className="form-hidden" type="hidden" name="manualArticlePhoto" value={manualArticlePhoto} readOnly />
-        <input className="form-hidden" type="hidden" name="manualArticleCategory" value={articleCategory === "Jewellery Set" ? "Jewellery Set" : "Custom"} readOnly />
-        <small className="suggested-price field-full">This article will appear on the booking and receipt, but will not be added to inventory.</small>
       </>}
+      <Field label={canCreateArticles ? "Or enter an article name" : "Article name *"} className="field-full"><input name="manualArticleName" value={manualArticleName} onChange={(event) => setManualArticleName(event.target.value)} placeholder="Type the article name" required={!canCreateArticles && !selectedArticleIds.length} /></Field>
+      <PhotoUpload value={manualArticlePhoto} onChange={setManualArticlePhoto} />
+      <input className="form-hidden" type="hidden" name="manualArticlePhoto" value={manualArticlePhoto} readOnly />
+      <input className="form-hidden" type="hidden" name="manualArticleCategory" value={articleCategory === "Jewellery Set" ? "Jewellery Set" : "Custom"} readOnly />
+      <small className="suggested-price field-full">{canCreateArticles
+        ? "Use search to select inventory, add a new article to inventory, or type a booking-only article name."
+        : "This article will appear on the booking and receipt, but will not be added to inventory."}</small>
     </div>
     <div className="booking-customer-field field-full">
       <Field label="Customer name *"><input name="customerName" value={customerDetails.name} onChange={(event) => setCustomerDetails({ ...customerDetails, name: event.target.value })} placeholder="Customer name" required /></Field>
