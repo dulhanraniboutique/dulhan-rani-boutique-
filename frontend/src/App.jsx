@@ -370,18 +370,16 @@ function ArticleCard({ article, onEdit }) {
       <div className="article-card-footer"><span>Min. order <strong>{currency(article.minOrder)}</strong></span><button aria-label={`Edit ${article.name}`} onClick={() => onEdit(article)}><Pencil size={15} /></button></div></div></article>;
 }
 
-function BookingsPage({ bookings, articles, query, onQueryChange, onNew, onView, isAdmin, currentUserId, currentUserName, onEdit, onDelete, onStatusChange, onRecordPayment, jewelleryOnly = false }) {
+function BookingsPage({ bookings, articles, query, onQueryChange, onNew, onView, isAdmin, onEdit, onDelete, onStatusChange, onRecordPayment, jewelleryOnly = false }) {
   const [filter, setFilter] = useState("All bookings");
   const [deliveryDate, setDeliveryDate] = useState("");
   const pageBookings = jewelleryOnly ? bookings.filter((booking) => bookingHasJewellerySet(booking, articles)) : bookings;
-  const visibleBookings = isAdmin ? pageBookings : pageBookings.filter((booking) => booking.createdById
-    ? booking.createdById === currentUserId
-    : (booking.createdBy || booking.staff) === currentUserName);
+  const visibleBookings = pageBookings;
   const filtered = visibleBookings.filter((item) => `${item.id} ${item.customer} ${bookingArticleLabels(item)} ${bookingArticleTitles(item)}`.toLowerCase().includes(query.toLowerCase())
     && (filter === "All bookings" || item.status === filter)
     && (!deliveryDate || (item.delivery >= deliveryDate && item.delivery <= dateAfter(deliveryDate, 1))));
   return <>
-    <PageHeader eyebrow="RENTAL MANAGEMENT" title={jewelleryOnly ? "Jewellery Set Booking" : isAdmin ? "Bookings" : "My bookings"} description={jewelleryOnly ? "View bookings that include a jewellery set, alone or with an outfit." : "Track reservations, delivery dates and returns."} action actionLabel="New booking" onAction={onNew} />
+    <PageHeader eyebrow="RENTAL MANAGEMENT" title={jewelleryOnly ? "Jewellery Set Booking" : "Bookings"} description={jewelleryOnly ? "View bookings that include a jewellery set, alone or with an outfit." : "Track reservations, delivery dates and returns."} action actionLabel="New booking" onAction={onNew} />
     <div className="booking-stats"><MiniMetric label="All bookings" value={visibleBookings.length} /><MiniMetric label="Confirmed" value={visibleBookings.filter((b) => b.status === "Confirmed").length} tone="plum" /><MiniMetric label="Currently out" value={visibleBookings.filter((b) => b.status === "Out").length} tone="orange" /><MiniMetric label="Returned" value={visibleBookings.filter((b) => b.status === "Returned").length} tone="green" /></div>
     <section className="booking-date-filter-panel"><div><strong>Filter bookings by delivery date</strong><span>Select a date to show its bookings and the following day.</span></div><label><CalendarDays size={16} /><DateInput ariaLabel="Filter bookings from selected delivery date through next day" value={deliveryDate} onChange={setDeliveryDate} /></label>{deliveryDate && <><span className="booking-date-range">Showing {readableDate(deliveryDate)} – {readableDate(dateAfter(deliveryDate, 1))}</span><Button variant="outline" onClick={() => setDeliveryDate("")}>Clear date</Button></>}</section>
     <div className="bookings-toolbar">
@@ -1290,7 +1288,7 @@ export default function App() {
   const currentProfile = session?.role === "sales" ? activeSalesperson || profile : profile;
   const currentUserId = role === "admin" ? "admin" : session.id;
   const pageTitles = {
-    dashboard: "Dashboard", articles: "Articles", bookings: role === "admin" ? "Bookings" : "My bookings", sales: "Sales", customers: "Customers",
+    dashboard: "Dashboard", articles: "Articles", bookings: "Bookings", sales: "Sales", customers: "Customers",
     "recently-deleted": "Recently deleted",
     "jewellery-bookings": "Jewellery Set Booking",
     payments: role === "admin" ? "Payments" : "Payments received", returns: "Returns & tracking", tomorrow: "Delivery prep", calendar: "Calendar", reports: "Reports", approvals: "Approvals",
@@ -1302,8 +1300,7 @@ export default function App() {
       ...group,
       items: group.items.map((item) => ({
         ...item,
-        label: role === "sales" && item.id === "bookings" ? "My bookings"
-          : role === "sales" && item.id === "payments" ? "Payments received"
+        label: role === "sales" && item.id === "payments" ? "Payments received"
             : item.label,
       })),
     }));
@@ -1869,9 +1866,7 @@ export default function App() {
     }
     setModal({ type: "staff-create" });
   };
-  const dashboardBookings = role === "admin" ? bookings : bookings.filter((booking) => booking.createdById
-    ? booking.createdById === currentUserId
-    : (booking.createdBy || booking.staff) === currentProfile.name);
+  const dashboardBookings = bookings;
   const pendingApprovalCount = approvalRequests.filter((item) => item.status === "Pending").length;
   const deliveryPrepCount = deliveryPrepBookings(bookings, articles, prepDateRange)
     .reduce((count, booking) => count + booking.deliveryArticles.length, 0);
@@ -1886,9 +1881,9 @@ export default function App() {
     }
     switch (activePage) {
       case "articles": return <ArticlesPage articles={articles} query={filteredQuery} onQueryChange={setQuery} onAdd={openArticleModal} onEdit={openEditArticle} />;
-      case "bookings": return <BookingsPage bookings={bookings} articles={articles} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} />;
+      case "bookings": return <BookingsPage bookings={bookings} articles={articles} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} />;
       case "sales": return <SalesPage sales={sales} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "sale" })} onEdit={openEditSale} onDelete={handleSaleDelete} />;
-      case "jewellery-bookings": return <BookingsPage bookings={bookings} articles={articles} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} jewelleryOnly />;
+      case "jewellery-bookings": return <BookingsPage bookings={bookings} articles={articles} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} jewelleryOnly />;
       case "customers": return <CustomersPage customers={customers} query={filteredQuery} onQueryChange={setQuery} onAdd={openCustomerModal} />;
       case "payments": return <PaymentsPage payments={payments} bookings={bookings} query={filteredQuery} onQueryChange={setQuery} onAdd={openPaymentModal} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} salespeople={salespeople} adminProfile={profile} />;
       case "returns": return <ReturnsPage bookings={bookings} onReturn={handleReturn} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} />;
