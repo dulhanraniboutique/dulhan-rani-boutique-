@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 const app = express();
 const port = Number(process.env.PORT) || 4000;
 const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-const resources = new Set(["articles", "bookings", "customers", "payments", "sales", "settings", "deletedRecords"]);
+const resources = new Set(["articles", "bookings", "customers", "payments", "sales", "settings", "deletedRecords", "staffRemittances"]);
 const pbkdf2 = promisify(derivePinHash);
 const pinIterations = 120000;
 let client;
@@ -126,8 +126,8 @@ function requireAdmin(request, response, next) {
 }
 
 function requireResourceAccess(request, response, next) {
-  if (request.params.resource === "deletedRecords" && request.account.role !== "admin") {
-    response.status(403).json({ error: "Administrator access is required for recently deleted records." });
+  if (["deletedRecords", "staffRemittances"].includes(request.params.resource) && request.account.role !== "admin") {
+    response.status(403).json({ error: "Administrator access is required for this resource." });
     return;
   }
   if (request.params.resource === "settings"
@@ -932,10 +932,48 @@ app.put("/api/data/:resource/sync", requireAuth, requireResourceAccess, async (r
       response.status(400).json({ error: "Every recently deleted record needs a valid expiry date." });
       return;
     }
+    if (request.params.resource === "staffRemittances") {
+      const methods = new Set(["Cash", "JazzCash", "Easypaisa", "Bank transfer"]);
+      if (deletes.length) {
+        response.status(400).json({ error: "Staff handover records cannot be deleted." });
+        return;
+      }
+      if (upserts.some((item) => !Number.isFinite(Number(item.amount)) || Number(item.amount) <= 0
+        || typeof item.salespersonId !== "string" || !item.salespersonId.trim()
+        || typeof item.salespersonName !== "string" || !item.salespersonName.trim()
+        || typeof item.receivedById !== "string" || item.receivedById !== request.account._id
+        || typeof item.receivedBy !== "string" || !item.receivedBy.trim()
+        || typeof item.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(item.date)
+        || Number.isNaN(Date.parse(`${item.date}T00:00:00.000Z`))
+        || new Date(`${item.date}T00:00:00.000Z`).toISOString().slice(0, 10) !== item.date
+        || !methods.has(item.method)
+        || typeof item.createdAt !== "string" || Number.isNaN(Date.parse(item.createdAt)))) {
+        response.status(400).json({ error: "Every staff handover needs a valid salesperson, amount, method, date, and receiver." });
+        return;
+      }
+    }
 
     const collection = (await connectToDatabase())
       .db(process.env.MONGODB_DB)
       .collection(request.params.resource);
+    if (request.params.resource === "staffRemittances") {
+      if (deletes.length) {
+        response.status(400).json({ error: "Staff handover records cannot be deleted." });
+        return;
+      }
+      const existing = await collection.find({ _id: { $in: upserts.map((item) => item.id) } }).toArray();
+      const existingById = new Map(existing.map((item) => [String(item._id), item]));
+      for (const item of upserts) {
+        const previous = existingById.get(item.id);
+        if (!previous) continue;
+        const unchanged = Object.entries(item).every(([key, value]) => JSON.stringify(previous[key]) === JSON.stringify(value))
+          && Object.keys(previous).every((key) => key === "_id" || Object.prototype.hasOwnProperty.call(item, key));
+        if (!unchanged) {
+          response.status(409).json({ error: "Staff handover records cannot be changed after they are recorded." });
+          return;
+        }
+      }
+    }
     const accessError = await checkSalesWriteAccess(
       request.params.resource,
       request.account,

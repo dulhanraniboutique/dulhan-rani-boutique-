@@ -280,6 +280,8 @@ tbody tr:hover { background: #fdfbfc; }
 .staff-cash-panel { margin-top: 14px; padding: 14px; }
 .staff-cash-panel .panel-heading { align-items: flex-end; }
 .staff-cash-panel .panel-heading > label { display: flex; flex-direction: column; gap: 5px; color: #71636a; font-size: 9px; font-weight: 600; }
+.staff-handover-actions { display: flex; align-items: flex-end; gap: 10px; }
+.staff-handover-actions > label { display: flex; flex-direction: column; gap: 5px; color: #71636a; font-size: 9px; font-weight: 600; }
 .staff-cash-panel input { min-height: 34px; padding: 7px 9px; border: 1px solid #e9e3e6; border-radius: 5px; color: #54474d; font-size: 10px; }
 .staff-cash-total { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; padding: 10px; border-radius: 6px; background: #f7f2f4; }
 .staff-cash-total > span { color: #786771; font-size: 9px; }
@@ -678,6 +680,7 @@ tbody tr:hover { background: #fdfbfc; }
   .finance-card { min-height: 93px; }
   .staff-cash-panel { padding: 10px; }
   .staff-cash-panel .panel-heading { align-items: flex-start; flex-direction: column; }
+  .staff-handover-actions { align-items: flex-start; flex-direction: column; }
   .staff-cash-total { align-items: flex-start; flex-direction: column; gap: 4px; }
   .return-alert { align-items: flex-start; padding: 10px; }
   .return-alert > div:nth-child(2) { padding-top: 2px; }

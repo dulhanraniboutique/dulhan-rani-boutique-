@@ -470,8 +470,9 @@ function CustomersPage({ customers, query, onQueryChange, onAdd }) {
   </>;
 }
 
-function PaymentsPage({ payments, bookings, query, onQueryChange, onAdd, isAdmin, currentUserId, currentUserName, salespeople, adminProfile }) {
+function PaymentsPage({ payments, bookings, staffRemittances, query, onQueryChange, onAdd, onAddHandover, isAdmin, currentUserId, currentUserName, salespeople, adminProfile }) {
   const [reportDate, setReportDate] = useState(today);
+  const [handoverDate, setHandoverDate] = useState(today);
   const visibleBookings = isAdmin ? bookings : bookings.filter((booking) => booking.createdById
     ? booking.createdById === currentUserId
     : (booking.createdBy || booking.staff) === currentUserName);
@@ -498,6 +499,7 @@ function PaymentsPage({ payments, bookings, query, onQueryChange, onAdd, isAdmin
   };
   bookings.forEach((booking) => includeFormerStaff(booking.createdById, booking.createdBy || booking.staff));
   payments.forEach((payment) => includeFormerStaff(payment.receivedById, payment.receivedBy));
+  staffRemittances.forEach((handover) => includeFormerStaff(handover.salespersonId, handover.salespersonName));
   const receivedByStaff = (payment, person) => payment.receivedById
     ? payment.receivedById === person.id
     : payment.receivedBy === person.name;
@@ -507,6 +509,9 @@ function PaymentsPage({ payments, bookings, query, onQueryChange, onAdd, isAdmin
   const dailyPayments = payments.filter((payment) => payment.date === reportDate);
   const dailyTotal = dailyPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const dailyBookings = bookings.filter((booking) => booking.bookingDate === reportDate);
+  const dailyHandovers = staffRemittances.filter((handover) => handover.date === handoverDate)
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  const dailyHandoverTotal = dailyHandovers.reduce((sum, handover) => sum + Number(handover.amount || 0), 0);
   return <>
     <PageHeader eyebrow="FINANCE" title={isAdmin ? "Payments" : "Payments received"} description="Track every payment and the team member who collected it." action actionLabel="Record payment" onAction={onAdd} />
     <div className="finance-cards"><FinanceCard label="Total collected" value={currency(total)} note={isAdmin ? "All recorded receipts" : "Receipts collected by you"} icon={ArrowDownLeft} tone="green" /><FinanceCard label="Outstanding balance" value={currency(due)} note="Across your active bookings" icon={Clock3} tone="orange" /><FinanceCard label="Transactions" value={visiblePayments.length} note="Recorded receipts" icon={CreditCard} tone="plum" /></div>
@@ -516,8 +521,8 @@ function PaymentsPage({ payments, bookings, query, onQueryChange, onAdd, isAdmin
         {filtered.map((payment) => <tr key={payment.id}><td className="strong-cell">{payment.id}</td><td>{payment.booking}</td><td>{payment.customer}</td><td>{readableDate(payment.date)}</td><td><span className="payment-method"><CircleDollarSign size={15} />{payment.method}</span></td><td>{payment.receivedBy}</td><td className="money-cell">{currency(payment.amount)}</td></tr>)}
       </tbody></table>{filtered.length === 0 && <EmptyState title="No payments found" detail="Recorded payments will appear here." />}</div></section>
     <section className="panel due-panel"><div className="due-panel-icon"><AlertTriangle size={18} /></div><div><strong>Balances to follow up</strong><span>There are {visibleBookings.filter((b) => b.amount > b.paid && !["Returned", "Cancelled"].includes(b.status)).length} active bookings with remaining payments.</span></div><strong>{currency(due)}</strong></section>
-    {isAdmin && <section className="panel staff-cash-panel"><div className="panel-heading table-title"><div><h2>Staff collection summary</h2><p>Compare lifetime activity with bookings and payments for the selected day.</p></div><label><span>Day-end date</span><DateInput ariaLabel="Staff summary date" value={reportDate} onChange={setReportDate} /></label></div>
-      <div className="staff-cash-total"><span>Total received on {readableDate(reportDate)}</span><strong>{currency(dailyTotal)}</strong><small>{dailyPayments.length} payment{dailyPayments.length === 1 ? "" : "s"} · {dailyBookings.length} booking{dailyBookings.length === 1 ? "" : "s"} created</small></div>
+    {isAdmin && <section className="panel staff-cash-panel"><div className="panel-heading table-title"><div><h2>Booking payment collection summary</h2><p>Customer payments recorded against bookings by each team member.</p></div><label><span>Report date</span><DateInput ariaLabel="Booking payment report date" value={reportDate} onChange={setReportDate} /></label></div>
+      <div className="staff-cash-total"><span>Customer booking payments on {readableDate(reportDate)}</span><strong>{currency(dailyTotal)}</strong><small>{dailyPayments.length} payment{dailyPayments.length === 1 ? "" : "s"} · {dailyBookings.length} booking{dailyBookings.length === 1 ? "" : "s"} created</small></div>
       <div className="table-scroll"><table><thead><tr><th>TEAM MEMBER</th><th>ALL BOOKINGS</th><th>BOOKINGS THIS DAY</th><th>PAYMENTS THIS DAY</th><th>COLLECTED ALL TIME</th><th>COLLECTED THIS DAY</th></tr></thead><tbody>
         {staff.map((person) => {
           const memberBookings = bookings.filter((booking) => bookedByStaff(booking, person));
@@ -529,12 +534,55 @@ function PaymentsPage({ payments, bookings, query, onQueryChange, onAdd, isAdmin
           return <tr key={person.id}><td><strong>{person.name}</strong><small className="sub-cell">{person.role}</small></td><td>{memberBookings.length}</td><td>{dayBookings.length}</td><td>{dayPayments.length}</td><td className="money-cell">{currency(memberTotal)}</td><td className="money-cell">{currency(dayTotal)}</td></tr>;
         })}
       </tbody></table></div>
-      <div className="panel-heading table-title staff-transaction-heading"><div><h2>Payment transactions for {readableDate(reportDate)}</h2><p>Each receipt is attributed to the team member who recorded it.</p></div><span className="subtle-count">{dailyPayments.length} transactions</span></div>
-      <div className="table-scroll"><table><thead><tr><th>RECEIPT</th><th>RECEIVED FROM</th><th>BOOKING</th><th>CUSTOMER</th><th>METHOD</th><th>AMOUNT</th></tr></thead><tbody>
-        {dailyPayments.map((payment) => <tr key={payment.id}><td className="strong-cell">{payment.id}</td><td>{payment.receivedBy || "Unknown"}</td><td>{payment.booking}</td><td>{payment.customer}</td><td><span className="payment-method"><CircleDollarSign size={15} />{payment.method}</span></td><td className="money-cell">{currency(payment.amount)}</td></tr>)}
-      </tbody></table>{dailyPayments.length === 0 && <EmptyState title="No payments on this date" detail="Receipts recorded on the selected day will appear here with the team member who collected them." />}</div>
+    </section>}
+    {isAdmin && <section className="panel staff-cash-panel"><div className="panel-heading table-title"><div><h2>Salesperson handovers</h2><p>Record money a salesperson has handed over to you, separately from booking payments.</p></div><div className="staff-handover-actions"><label><span>Handover date</span><DateInput ariaLabel="Handover report date" value={handoverDate} onChange={setHandoverDate} /></label><Button icon={Wallet} onClick={onAddHandover}>Record handover</Button></div></div>
+      <div className="staff-cash-total"><span>Total handed over to you on {readableDate(handoverDate)}</span><strong>{currency(dailyHandoverTotal)}</strong><small>{dailyHandovers.length} handover{dailyHandovers.length === 1 ? "" : "s"} recorded · selected date</small></div>
+      <div className="table-scroll"><table><thead><tr><th>SALESPERSON</th><th>HANDOVERS THIS DAY</th><th>AMOUNT HANDED OVER</th></tr></thead><tbody>
+        {staff.filter((person) => person.role !== "Administrator").map((person) => {
+          const memberHandovers = dailyHandovers.filter((handover) => handover.salespersonId
+            ? handover.salespersonId === person.id
+            : handover.salespersonName === person.name);
+          const memberTotal = memberHandovers.reduce((sum, handover) => sum + Number(handover.amount || 0), 0);
+          return <tr key={person.id}><td><strong>{person.name}</strong><small className="sub-cell">{person.role}</small></td><td>{memberHandovers.length}</td><td className="money-cell">{currency(memberTotal)}</td></tr>;
+        })}
+      </tbody></table></div>
+      <div className="panel-heading table-title staff-transaction-heading"><div><h2>Handover transactions · {readableDate(handoverDate)}</h2><p>Every time money was handed to you by a salesperson.</p></div><span className="subtle-count">{dailyHandovers.length} transactions</span></div>
+      <div className="table-scroll"><table><thead><tr><th>TIME</th><th>RECEIVED FROM</th><th>METHOD</th><th>RECEIVED BY</th><th>AMOUNT</th></tr></thead><tbody>
+        {dailyHandovers.map((handover) => <tr key={handover.id}><td>{new Date(handover.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</td><td><strong>{handover.salespersonName}</strong></td><td><span className="payment-method"><CircleDollarSign size={15} />{handover.method}</span></td><td>{handover.receivedBy}</td><td className="money-cell">{currency(handover.amount)}</td></tr>)}
+      </tbody></table>{dailyHandovers.length === 0 && <EmptyState title="No handovers on this date" detail="Use Record handover when a salesperson gives you cash or transfers money." />}</div>
     </section>}
   </>;
+}
+
+function StaffHandoverForm({ salespeople, onSave, onCancel }) {
+  const [date, setDate] = useState(today);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const submit = async (event) => {
+    event.preventDefault();
+    setError("");
+    const form = new FormData(event.currentTarget);
+    const salesperson = salespeople.find((person) => person.id === form.get("salesperson"));
+    const amount = Number(form.get("amount"));
+    if (!salesperson) { setError("Choose the salesperson who handed over the money."); return; }
+    if (!Number.isFinite(amount) || amount <= 0) { setError("Enter an amount greater than zero."); return; }
+    setSaving(true);
+    try {
+      await onSave({ salesperson, amount, method: form.get("method"), date });
+    } catch (saveError) {
+      setError(saveError.message || "Could not record this handover.");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return <form className="form-grid" onSubmit={submit}>
+    <Field label="Received from salesperson *" className="field-full"><select name="salesperson" required defaultValue=""><option value="" disabled>Choose salesperson</option>{salespeople.filter((person) => person.active !== false).map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></Field>
+    <Field label="Amount received (PKR) *"><input name="amount" type="number" min="1" step="1" required placeholder="5000" autoFocus /></Field>
+    <Field label="Received via *"><select name="method" defaultValue="Cash"><option>Cash</option><option>JazzCash</option><option>Easypaisa</option><option>Bank transfer</option></select></Field>
+    <Field label="Handover date *"><DateInput ariaLabel="Handover date" value={date} onChange={setDate} required /></Field>
+    {error && <p className="form-error field-full" role="alert">{error}</p>}
+    <div className="modal-actions"><Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={Check} disabled={saving}>{saving ? "Recording…" : "Record handover"}</Button></div>
+  </form>;
 }
 
 function FinanceCard({ label, value, note, icon: Icon, tone }) {
@@ -955,6 +1003,7 @@ export default function App() {
   const [customers, setCustomers] = useSyncedData("customers", seedCustomers, Boolean(session));
   const [bookings, setBookings] = useSyncedData("bookings", seedBookings, Boolean(session));
   const [payments, setPayments] = useSyncedData("payments", seedPayments, Boolean(session));
+  const [staffRemittances, setStaffRemittances] = useSyncedData("staffRemittances", [], session?.role === "admin");
   const [sales, setSales] = useSyncedData("sales", [], Boolean(session));
   const [deletedRecords, setDeletedRecords] = useSyncedData("deletedRecords", [], session?.role === "admin");
   const [workspaceSettings, setWorkspaceSettings] = useSyncedData("settings", [], Boolean(session));
@@ -1844,6 +1893,21 @@ export default function App() {
       : item));
     setModal(null); notify("Payment recorded successfully.");
   };
+  const handleStaffHandoverSave = ({ salesperson, amount, method, date }) => {
+    setStaffRemittances([{
+      id: createRecordId("REM"),
+      salespersonId: salesperson.id,
+      salespersonName: salesperson.name,
+      amount,
+      method,
+      date,
+      createdAt: new Date().toISOString(),
+      receivedBy: currentProfile.name,
+      receivedById: currentUserId,
+    }, ...staffRemittances]);
+    setModal(null);
+    notify(`${currency(amount)} handover from ${salesperson.name} recorded.`);
+  };
   const handleReturn = (bookingId) => {
     const booking = bookings.find((item) => item.id === bookingId);
     if (!booking || booking.status !== "Out") {
@@ -1918,7 +1982,7 @@ export default function App() {
       case "sales": return <SalesPage sales={sales} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "sale" })} onEdit={openEditSale} onDelete={handleSaleDelete} />;
       case "jewellery-bookings": return <BookingsPage bookings={bookings} articles={articles} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking", initialCategory: "Jewellery Set" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} jewelleryOnly />;
       case "customers": return <CustomersPage customers={customers} query={filteredQuery} onQueryChange={setQuery} onAdd={openCustomerModal} />;
-      case "payments": return <PaymentsPage payments={payments} bookings={bookings} query={filteredQuery} onQueryChange={setQuery} onAdd={openPaymentModal} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} salespeople={salespeople} adminProfile={profile} />;
+      case "payments": return <PaymentsPage payments={payments} bookings={bookings} staffRemittances={staffRemittances} query={filteredQuery} onQueryChange={setQuery} onAdd={openPaymentModal} onAddHandover={() => setModal({ type: "staff-handover" })} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} salespeople={salespeople} adminProfile={profile} />;
       case "returns": return <ReturnsPage bookings={bookings} onReturn={handleReturn} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} />;
       case "tomorrow": return <TomorrowDeliveriesPage bookings={bookings} articles={articles} dateRange={prepDateRange} onRangeChange={setPrepDateRange} onToggleReady={togglePrepReady} isAdmin={role === "admin"} />;
       case "calendar": return <CalendarPage bookings={bookings} articles={articles} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} />;
@@ -1985,6 +2049,9 @@ export default function App() {
         const amountField = event.currentTarget.form?.elements.namedItem("amount");
         if (selectedBooking && amountField) amountField.value = String(Math.max(selectedBooking.amount - selectedBooking.paid, 0));
       }}><option value="" disabled>Choose booking</option>{bookings.filter((b) => b.amount > b.paid).map((booking) => <option key={booking.id} value={booking.id}>{booking.id} · {booking.customer} · Due {currency(booking.amount - booking.paid)}</option>)}</select></Field><Field label="Amount received (PKR) *"><input name="amount" type="number" min="1" required placeholder="2500" defaultValue={modal.bookingId ? Math.max((bookings.find((item) => item.id === modal.bookingId)?.amount || 0) - (bookings.find((item) => item.id === modal.bookingId)?.paid || 0), 0) : ""} /></Field><Field label="Payment method *"><select name="method"><option>Cash</option><option>Bank transfer</option><option>JazzCash</option><option>Easypaisa</option></select></Field><div className="modal-actions"><Button variant="outline" onClick={() => setModal(null)}>Cancel</Button><Button type="submit" icon={Wallet}>Record payment</Button></div></form>
+    </Modal>}
+    {modal?.type === "staff-handover" && <Modal title="Record salesperson handover" description="Record cash or a transfer a salesperson has handed over to you. This is separate from customer booking payments." onClose={() => setModal(null)}>
+      <StaffHandoverForm salespeople={salespeople} onSave={handleStaffHandoverSave} onCancel={() => setModal(null)} />
     </Modal>}
     {modal?.type === "profile-edit" && <Modal title="Edit my profile" description="Update the name and contact details shown on your account." onClose={() => setModal(null)}>
       <ProfileEditForm key={session.id || "admin"} profile={currentProfile} onSave={handleProfileSave} onCancel={() => setModal(null)} />
