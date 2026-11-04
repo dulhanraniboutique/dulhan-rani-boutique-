@@ -529,6 +529,10 @@ function PaymentsPage({ payments, bookings, query, onQueryChange, onAdd, isAdmin
           return <tr key={person.id}><td><strong>{person.name}</strong><small className="sub-cell">{person.role}</small></td><td>{memberBookings.length}</td><td>{dayBookings.length}</td><td>{dayPayments.length}</td><td className="money-cell">{currency(memberTotal)}</td><td className="money-cell">{currency(dayTotal)}</td></tr>;
         })}
       </tbody></table></div>
+      <div className="panel-heading table-title staff-transaction-heading"><div><h2>Payment transactions for {readableDate(reportDate)}</h2><p>Each receipt is attributed to the team member who recorded it.</p></div><span className="subtle-count">{dailyPayments.length} transactions</span></div>
+      <div className="table-scroll"><table><thead><tr><th>RECEIPT</th><th>RECEIVED FROM</th><th>BOOKING</th><th>CUSTOMER</th><th>METHOD</th><th>AMOUNT</th></tr></thead><tbody>
+        {dailyPayments.map((payment) => <tr key={payment.id}><td className="strong-cell">{payment.id}</td><td>{payment.receivedBy || "Unknown"}</td><td>{payment.booking}</td><td>{payment.customer}</td><td><span className="payment-method"><CircleDollarSign size={15} />{payment.method}</span></td><td className="money-cell">{currency(payment.amount)}</td></tr>)}
+      </tbody></table>{dailyPayments.length === 0 && <EmptyState title="No payments on this date" detail="Receipts recorded on the selected day will appear here with the team member who collected them." />}</div>
     </section>}
   </>;
 }
