@@ -735,6 +735,9 @@ tbody tr:hover { background: #fdfbfc; }
   .sidebar-bottom { flex: 0 0 auto; }
 }
 @media print {
+  @page { margin: 12mm; }
+  html,body { height: auto !important; min-height: 0 !important; overflow: visible !important; }
+  body { position: static !important; inset: auto !important; width: auto !important; }
   .sidebar,.topbar,.page-heading > .button,.toolbar,.app-footer,.icon-button,.button { display: none !important; }
   .prep-actions,.prep-ready-toggle { display: none !important; }
   .main-area { margin: 0; }

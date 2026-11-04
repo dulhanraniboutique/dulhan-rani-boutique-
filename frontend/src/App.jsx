@@ -1988,6 +1988,8 @@ export default function App() {
 }
 
 function BookingForm({ booking, draft, formError, onErrorChange, articles, customers, onSubmit, onCancel, onAddArticle, addedArticleId, onAddedArticleHandled }) {
+  const [submitting, setSubmitting] = useState(false);
+  const submitLockRef = useRef(false);
   const [selectedArticleIds, setSelectedArticleIds] = useState(booking ? bookingArticleIds(booking) : draft?.selectedArticleIds || []);
   const selectedArticles = articles.filter((item) => selectedArticleIds.includes(item.id));
   const jewelleryOnly = selectedArticles.length > 0 && selectedArticles.every((item) => item.category === "Jewellery Set");
@@ -2050,7 +2052,19 @@ function BookingForm({ booking, draft, formError, onErrorChange, articles, custo
       notes: String(data.get("notes") || ""),
     });
   };
-  return <form className="form-grid" noValidate onSubmit={(event) => onSubmit(event, booking?.id || null)}>
+  const submitBooking = async (event) => {
+    event.preventDefault();
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
+    setSubmitting(true);
+    try {
+      await onSubmit(event, booking?.id || null);
+    } finally {
+      submitLockRef.current = false;
+      setSubmitting(false);
+    }
+  };
+  return <form className="form-grid" noValidate onSubmit={submitBooking}>
     <div className="booking-article-picker field-full">
       <Field label="Category"><select aria-label="Filter articles by category" value={articleCategory} onChange={(event) => setArticleCategory(event.target.value)}><option>All categories</option>{categories.filter((category) => category !== "Jewellery Set").map((category) => <option key={category}>{category}</option>)}</select></Field>
       <label className="booking-article-search"><Search size={15} /><input type="search" aria-label="Search articles for booking" placeholder="Type article name or number..." value={articleSearch} onChange={(event) => setArticleSearch(event.target.value)} /></label>
@@ -2085,7 +2099,7 @@ function BookingForm({ booking, draft, formError, onErrorChange, articles, custo
       {onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={(event) => preserveDraftAndAddArticle("Jewellery Set", event.currentTarget.closest("form"))}>Add jewellery set</Button>}
     </section>
     {formError && <div className="booking-form-error field-full" role="alert" aria-live="assertive"><AlertTriangle size={18} /><span>{formError}</span></div>}
-    <div className="modal-actions" ref={formActionsRef}><Button variant="outline" onClick={onCancel}>Cancel</Button><Button type="submit" icon={booking ? Check : CalendarDays}>{booking ? "Save changes" : "Confirm booking"}</Button></div>
+    <div className="modal-actions" ref={formActionsRef}><Button variant="outline" onClick={onCancel} disabled={submitting}>Cancel</Button><Button type="submit" icon={booking ? Check : CalendarDays} disabled={submitting}>{submitting ? "Saving booking…" : booking ? "Save changes" : "Confirm booking"}</Button></div>
   </form>;
 }
 
