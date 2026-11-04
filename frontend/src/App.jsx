@@ -61,8 +61,11 @@ const nextCategoryArticleNumber = (articles, category) => {
   return candidate;
 };
 const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-const bookingArticleIds = (booking) => booking.articles?.map((article) => typeof article === "string" ? article : article.id) || (booking.article ? [booking.article] : []);
-const bookingArticleNames = (booking) => booking.articles?.map((article) => typeof article === "string" ? article : article.name).filter(Boolean) || (booking.articleName ? [booking.articleName] : []);
+const bookingArticleIds = (booking) => (booking.articles?.map((article) => typeof article === "string" ? article : article.id) || (booking.article ? [booking.article] : [])).filter(Boolean);
+const bookingArticleNames = (booking) => [
+  ...(booking.articles?.map((article) => typeof article === "string" ? article : article.name).filter(Boolean) || (booking.articleName ? [booking.articleName] : [])),
+  ...(booking.manualArticles || []).map((article) => article.name).filter(Boolean),
+];
 const bookingArticleLabels = (booking) => bookingArticleIds(booking).join(", ");
 const bookingArticleTitles = (booking) => bookingArticleNames(booking).join(", ");
 const validatePakistaniPhone = (phone) => {
@@ -85,7 +88,7 @@ const bookingArticleRecords = (booking, inventory) => {
   const savedArticles = booking.articles?.length
     ? booking.articles
     : String(booking.article || "").split(",").map((id) => id.trim()).filter(Boolean);
-  return savedArticles.map((savedArticle, index) => {
+  const inventoryRecords = savedArticles.map((savedArticle, index) => {
     const id = typeof savedArticle === "string" ? savedArticle : savedArticle.id;
     const inventoryArticle = inventory.find((article) => article.id === id);
     const name = typeof savedArticle === "string" ? inventoryArticle?.name : savedArticle.name;
@@ -96,6 +99,7 @@ const bookingArticleRecords = (booking, inventory) => {
       category: (typeof savedArticle === "string" ? "" : savedArticle.category) || inventoryArticle?.category || "",
     };
   });
+  return [...inventoryRecords, ...(booking.manualArticles || [])];
 };
 const deliveryPrepBookings = (bookings, articles, dateRange) => bookings
   .filter((booking) => booking.delivery >= dateRange.from
@@ -343,7 +347,7 @@ function Availability({ label, count, total, tone }) {
     <div className="progress-track"><span className={`progress-${tone}`} style={{ width: `${total ? Math.max((count / total) * 100, 4) : 0}%` }} /></div></div>;
 }
 
-function ArticlesPage({ articles, query, onQueryChange, onAdd, onEdit }) {
+function ArticlesPage({ articles, query, onQueryChange, onAdd, onEdit, canCreateArticles }) {
   const [category, setCategory] = useState("All categories");
   const [availability, setAvailability] = useState("All statuses");
   const categories = categoriesForArticles(articles);
@@ -351,7 +355,7 @@ function ArticlesPage({ articles, query, onQueryChange, onAdd, onEdit }) {
     && (category === "All categories" || article.category === category)
     && (availability === "All statuses" || article.status === availability));
   return <>
-    <PageHeader eyebrow="INVENTORY" title="Article collection" description="Manage your rental pieces, photos, pricing and availability." action actionLabel="Add new article" onAction={onAdd} />
+    <PageHeader eyebrow="INVENTORY" title="Article collection" description="Manage your rental pieces, photos, pricing and availability." action={canCreateArticles} actionLabel="Add new article" onAction={onAdd} />
     <div className="toolbar"><div className="toolbar-search"><Search size={16} /><input placeholder="Search article number or name..." value={query} onChange={(event) => onQueryChange(event.target.value)} /></div>
       <div className="toolbar-controls"><select value={category} onChange={(event) => setCategory(event.target.value)}><option>All categories</option>{categories.map((item) => <option key={item}>{item}</option>)}</select>
         <select aria-label="Filter by availability" value={availability} onChange={(event) => setAvailability(event.target.value)}><option>All statuses</option><option>Available</option><option>Booked</option><option>Maintenance</option></select></div></div>
@@ -397,7 +401,7 @@ function BookingsPage({ bookings, articles, query, onQueryChange, onNew, onView,
             {isAdmin && booking.status === "Confirmed" && booking.amount <= booking.paid && <Button variant="small" icon={Truck} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Out"); }}>Mark picked up</Button>}
             {isAdmin && booking.status === "Out" && <Button variant="small" icon={Check} onClick={(event) => { event.stopPropagation(); onStatusChange(booking, "Returned"); }}>Confirm return</Button>}</div></td>
           <td className="strong-cell">{booking.id}</td><td><strong>{booking.customer}</strong><small className="sub-cell">{booking.phone}</small></td>
-          <td><div className="booking-article-cell">{firstPhoto ? <img src={firstPhoto} alt="" /> : <span className="booking-article-thumbnail-placeholder"><Shirt size={16} /></span>}<span><b className="article-id">{bookingArticleLabels(booking) || "No article"}</b><small className="sub-cell">{bookingArticleTitles(booking) || "—"}</small></span></div></td>
+          <td><div className="booking-article-cell">{firstPhoto ? <img src={firstPhoto} alt="" /> : <span className="booking-article-thumbnail-placeholder"><Shirt size={16} /></span>}<span><b className="article-id">{bookingArticleLabels(booking) || (booking.manualArticles?.length ? "Manual article" : "No article")}</b><small className="sub-cell">{bookingArticleTitles(booking) || "—"}</small></span></div></td>
           <td>{readableDate(booking.bookingDate)}</td><td>{readableDate(booking.delivery)}</td><td>{readableDate(booking.returnDate)}</td>
           <td><strong>{currency(booking.amount)}</strong><small className="sub-cell">{booking.amount > booking.paid ? `${currency(booking.amount - booking.paid)} due` : "Paid"}</small></td>
           <td><Status>{booking.status}</Status></td><td><div className="booking-row-actions">
@@ -610,7 +614,7 @@ function TomorrowDeliveriesPage({ bookings, articles, dateRange, onRangeChange, 
         <div className="prep-booking-heading"><div><strong>{booking.customer}</strong><span>{booking.phone || "No phone number"} · {booking.id}</span></div><span className="prep-delivery-date">{readableDate(booking.delivery)}</span></div>
         <div className="prep-articles">{booking.deliveryArticles.map((article) => <div className="prep-article" key={article.id}>
           {article.photo ? <img src={article.photo} alt={article.name} /> : <span className="prep-image-placeholder"><Shirt size={20} /></span>}
-          <div className="prep-article-copy"><strong>{article.name}</strong><span>{article.id}</span>
+          <div className="prep-article-copy"><strong>{article.name}</strong>{article.inventory !== false && <span>{article.id}</span>}
             <div className="prep-ready-actions"><Status>{booking.prepReadyArticleIds?.includes(article.id) ? "Ready" : "Not ready"}</Status>
               {isAdmin && <button className="prep-ready-toggle" onClick={() => onToggleReady(booking.id, article.id)}>{booking.prepReadyArticleIds?.includes(article.id) ? "Mark not ready" : "Mark ready"}</button>}
             </div>
@@ -765,6 +769,7 @@ function StaffForm({ person, onSave, onCancel, onDelete }) {
   const [name, setName] = useState(person?.name || "");
   const [phone, setPhone] = useState(person?.phone || "");
   const [email, setEmail] = useState(person?.email || "");
+  const [canCreateArticles, setCanCreateArticles] = useState(person?.canCreateArticles === true);
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [error, setError] = useState("");
@@ -779,7 +784,7 @@ function StaffForm({ person, onSave, onCancel, onDelete }) {
     if (!person && !pin) { setError("Create a PIN for this profile."); return; }
     setSaving(true);
     try {
-      await onSave({ id: person?.id, name: name.trim(), phone: phone.trim(), email: email.trim(), pin: pin || null });
+      await onSave({ id: person?.id, name: name.trim(), phone: phone.trim(), email: email.trim(), canCreateArticles, pin: pin || null });
     } catch (saveError) {
       setError(saveError.message || "Could not save this profile. Please try again.");
     } finally {
@@ -790,6 +795,7 @@ function StaffForm({ person, onSave, onCancel, onDelete }) {
     <Field label="Full name *" className="field-full"><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Salesperson name" required /></Field>
     <Field label="Phone number"><input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+92 300 0000000" /></Field>
     <Field label="Email address"><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Optional" /></Field>
+    <label className={`settings-toggle field-full${canCreateArticles ? " settings-toggle-on" : ""}`}><span className="settings-toggle-copy"><strong>Can create articles during booking</strong><small>Allows adding articles to shared inventory and searching inventory in bookings. Without it, this profile can enter a booking-only article name and photo.</small></span><input type="checkbox" checked={canCreateArticles} onChange={(event) => setCanCreateArticles(event.target.checked)} /></label>
     <Field label={person ? "New PIN (optional)" : "Create PIN *"}><input type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder={person ? "Leave blank to keep current" : "4–6 digits"} autoComplete="new-password" required={!person} /></Field>
     {(!person || pin) && <Field label="Confirm PIN *"><input type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={confirmPin} onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="Re-enter PIN" autoComplete="new-password" required={!person || Boolean(pin)} /></Field>}
     {error && <p className="form-error field-full" role="alert">{error}</p>}
@@ -1287,6 +1293,7 @@ export default function App() {
   const activeSalesperson = session?.role === "sales" ? salespeople.find((person) => person.id === session.id) : null;
   const currentProfile = session?.role === "sales" ? activeSalesperson || profile : profile;
   const currentUserId = role === "admin" ? "admin" : session.id;
+  const canCreateArticles = role === "admin" || currentProfile.canCreateArticles === true;
   const pageTitles = {
     dashboard: "Dashboard", articles: "Articles", bookings: "Bookings", sales: "Sales", customers: "Customers",
     "recently-deleted": "Recently deleted",
@@ -1638,7 +1645,22 @@ export default function App() {
     }
     if (amount < paid) { showBookingError("Rental amount cannot be less than the advance already paid."); return; }
     if (existing && paid !== existing.paid) { showBookingError("Payments must be changed from the Payments page."); return; }
+    const manualArticleName = String(form.get("manualArticleName") || "").trim();
+    const manualArticlePhoto = String(form.get("manualArticlePhoto") || "");
+    if (selectedIds.length === 0 && (canCreateArticles || !manualArticleName)) {
+      showBookingError(canCreateArticles ? "Select an article or add a new one to continue." : "Enter an article name to continue.");
+      return;
+    }
     const normalizedArticles = selectedArticles.map(({ id, name, photo, price, category }) => ({ id, name, photo, price, category }));
+    const manualArticles = canCreateArticles
+      ? existing?.manualArticles || []
+      : manualArticleName ? [{
+        id: existing?.manualArticles?.[0]?.id || createRecordId("ITEM"),
+        name: manualArticleName,
+        photo: manualArticlePhoto,
+        category: String(form.get("manualArticleCategory") || "Custom"),
+        inventory: false,
+      }] : [];
     const existingBooking = existing ? { ...existing } : {};
     delete existingBooking.event;
     const nextBooking = {
@@ -1654,7 +1676,8 @@ export default function App() {
       address: customer.address,
       articles: normalizedArticles,
       article: normalizedArticles.map((item) => item.id).join(", "),
-      articleName: normalizedArticles.map((item) => item.name).join(", "),
+      articleName: [...normalizedArticles.map((item) => item.name), ...manualArticles.map((item) => item.name)].join(", "),
+      manualArticles,
       delivery,
       returnDate,
       amount,
@@ -1884,10 +1907,10 @@ export default function App() {
         : <EmptyState title="Administrator access required" detail="Recently deleted records are only available to an administrator." />;
     }
     switch (activePage) {
-      case "articles": return <ArticlesPage articles={articles} query={filteredQuery} onQueryChange={setQuery} onAdd={openArticleModal} onEdit={openEditArticle} />;
+      case "articles": return <ArticlesPage articles={articles} query={filteredQuery} onQueryChange={setQuery} onAdd={openArticleModal} onEdit={openEditArticle} canCreateArticles={canCreateArticles} />;
       case "bookings": return <BookingsPage bookings={bookings} articles={articles} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} />;
       case "sales": return <SalesPage sales={sales} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "sale" })} onEdit={openEditSale} onDelete={handleSaleDelete} />;
-      case "jewellery-bookings": return <BookingsPage bookings={bookings} articles={articles} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} jewelleryOnly />;
+      case "jewellery-bookings": return <BookingsPage bookings={bookings} articles={articles} query={filteredQuery} onQueryChange={setQuery} onNew={() => setModal({ type: "booking", initialCategory: "Jewellery Set" })} onView={(booking) => setModal({ type: "booking-detail", booking })} isAdmin={role === "admin"} onEdit={openEditBooking} onDelete={handleBookingDelete} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} jewelleryOnly />;
       case "customers": return <CustomersPage customers={customers} query={filteredQuery} onQueryChange={setQuery} onAdd={openCustomerModal} />;
       case "payments": return <PaymentsPage payments={payments} bookings={bookings} query={filteredQuery} onQueryChange={setQuery} onAdd={openPaymentModal} isAdmin={role === "admin"} currentUserId={currentUserId} currentUserName={currentProfile.name} salespeople={salespeople} adminProfile={profile} />;
       case "returns": return <ReturnsPage bookings={bookings} onReturn={handleReturn} onStatusChange={handleBookingStatusChange} onRecordPayment={(booking) => setModal({ type: "payment", bookingId: booking.id })} />;
@@ -1933,7 +1956,7 @@ export default function App() {
       <ArticleForm article={modal.article} onSubmit={handleArticleSubmit} onCancel={() => setModal(null)} onDelete={handleArticleDelete} isAdmin={role === "admin"} />
     </Modal>}
     {modal?.type === "booking" && <Modal title="Create a booking" onClose={() => { setBookingDraft(null); setBookingFormError(""); setModal(null); }} wide>
-      <BookingForm draft={bookingDraft} formError={bookingFormError} onErrorChange={() => setBookingFormError("")} articles={articles} customers={customers} onSubmit={handleBookingSubmit} onCancel={() => { setBookingDraft(null); setBookingFormError(""); setModal(null); }} onAddArticle={(category, draft) => { setBookingDraft(draft); setModal({ type: "booking-article", quickArticleCategory: category }); }} addedArticleId={quickCreatedArticleId} onAddedArticleHandled={() => setQuickCreatedArticleId("")} />
+      <BookingForm draft={bookingDraft} initialCategory={modal.initialCategory} formError={bookingFormError} onErrorChange={() => setBookingFormError("")} articles={articles} customers={customers} onSubmit={handleBookingSubmit} onCancel={() => { setBookingDraft(null); setBookingFormError(""); setModal(null); }} canCreateArticles={canCreateArticles} onAddArticle={(category, draft) => { setBookingDraft(draft); setModal({ type: "booking-article", quickArticleCategory: category }); }} addedArticleId={quickCreatedArticleId} onAddedArticleHandled={() => setQuickCreatedArticleId("")} />
     </Modal>}
     {modal?.type === "sale" && <Modal title="Record a sale" description="Record a sale without rental dates or measurements." onClose={() => setModal(null)}>
       <SaleForm onSubmit={handleSaleSubmit} onCancel={() => setModal(null)} />
@@ -1941,11 +1964,11 @@ export default function App() {
     {modal?.type === "sale-edit" && <Modal title="Edit sale" description={`Update sale ${modal.sale.id}.`} onClose={() => setModal(null)}>
       <SaleForm key={modal.sale.id} sale={modal.sale} onSubmit={(event) => handleSaleSubmit(event, modal.sale.id)} onCancel={() => setModal(null)} />
     </Modal>}
-    {modal?.type === "booking-article" && <Modal title="Add an article" description="Create an inventory article, then it will be selected in this booking." onClose={() => setModal(null)}>
+    {modal?.type === "booking-article" && <Modal title={modal.quickArticleCategory === "Jewellery Set" ? "Add new jewellery article" : "Add an article"} description="Create an inventory article, then it will be selected in this booking." onClose={() => setModal(null)}>
       <ArticleForm initialCategory={modal.quickArticleCategory} onSubmit={(event) => handleArticleSubmit(event, null, false)} onSaved={(article) => { setQuickCreatedArticleId(article.id); setModal(null); }} onCancel={() => setModal(null)} />
     </Modal>}
     {modal?.type === "booking-edit" && <Modal title={role === "admin" ? "Edit booking" : "Request booking changes"} description={`Update reservation details for ${modal.booking.id}.`} onClose={() => { setBookingDraft(null); setModal(null); }} wide>
-      <BookingForm key={modal.booking.id} booking={modal.booking} draft={bookingDraft} formError={bookingFormError} onErrorChange={() => setBookingFormError("")} articles={articles} customers={customers} onSubmit={handleBookingSubmit} onCancel={() => { setBookingDraft(null); setBookingFormError(""); setModal(null); }} onAddArticle={(category, draft) => { setBookingDraft(draft); setModal({ type: "booking-article", quickArticleCategory: category }); }} addedArticleId={quickCreatedArticleId} onAddedArticleHandled={() => setQuickCreatedArticleId("")} />
+      <BookingForm key={modal.booking.id} booking={modal.booking} draft={bookingDraft} formError={bookingFormError} onErrorChange={() => setBookingFormError("")} articles={articles} customers={customers} onSubmit={handleBookingSubmit} onCancel={() => { setBookingDraft(null); setBookingFormError(""); setModal(null); }} canCreateArticles={canCreateArticles} onAddArticle={(category, draft) => { setBookingDraft(draft); setModal({ type: "booking-article", quickArticleCategory: category }); }} addedArticleId={quickCreatedArticleId} onAddedArticleHandled={() => setQuickCreatedArticleId("")} />
     </Modal>}
     {modal?.type === "customer" && <Modal title="Add customer" description="Save customer contact details for future bookings." onClose={() => setModal(null)}>
       <form className="form-grid" onSubmit={handleCustomerSubmit}><Field label="Customer name *"><input name="name" placeholder="Full name" required /></Field><Field label="Phone number 1 *"><input name="phone" type="tel" placeholder="+92 300 0000000" required /></Field><Field label="Phone number 2 (optional)"><input name="phone2" type="tel" placeholder="+92 300 0000000" /></Field><Field label="CNIC number"><input name="cnic" placeholder="Optional" /></Field><Field label="Area / street address *"><input name="address" placeholder="e.g. Gulberg III" required /></Field><Field label="City *"><input name="city" list="customer-cities" placeholder="Select or type a city" required /><CityOptions /></Field><div className="modal-actions"><Button variant="outline" onClick={() => setModal(null)}>Cancel</Button><Button type="submit" icon={Plus}>Save customer</Button></div></form>
@@ -1972,7 +1995,7 @@ export default function App() {
     {modal?.type === "booking-detail" && <Modal title="Booking details" description={`${modal.booking.id} · Created by ${modal.booking.createdBy || modal.booking.staff || "Unknown"}`} onClose={() => setModal(null)} className="receipt-modal">
       <div className="booking-detail"><header className="receipt-brand"><h1>{businessSettings.name || defaultBusinessSettings.name}</h1><p>{businessSettings.address}</p><p>{businessSettings.phone}{businessSettings.email ? ` · ${businessSettings.email}` : ""}</p><strong>Booking receipt · {modal.booking.id}</strong></header>
         <div className="detail-highlight"><span><CalendarDays size={20} /></span><div><strong>{modal.booking.customer}</strong><small><Phone size={13} />{modal.booking.phone || "No phone number"}</small></div><Status className="receipt-booking-status">{modal.booking.status}</Status></div>
-        <div className="detail-lines"><div><span>Booking date</span><strong>{readableDate(modal.booking.bookingDate)}</strong></div><div><span>Booked by</span><strong>{modal.booking.createdBy || modal.booking.staff || "Unknown"}</strong></div><div><span>Outfits</span><strong>{detailArticles.filter((article) => article.category !== "Jewellery Set").map((article) => article.name).join(", ") || "—"}</strong><small>{detailArticles.filter((article) => article.category !== "Jewellery Set").map((article) => article.id).join(", ")}</small></div><div><span>Jewellery sets</span><strong>{detailArticles.filter((article) => article.category === "Jewellery Set").map((article) => article.name).join(", ") || "—"}</strong><small>{detailArticles.filter((article) => article.category === "Jewellery Set").map((article) => article.id).join(", ")}</small></div><div><span>Delivery date</span><strong>{readableDate(modal.booking.delivery)}</strong></div><div><span>Return date</span><strong>{readableDate(modal.booking.returnDate)}</strong></div>{detailArticles.some((article) => article.category !== "Jewellery Set") && <div><span>Measurements</span><strong>{[modal.booking.chest && `Chest ${modal.booking.chest} in`, modal.booking.back && `Back ${modal.booking.back} in`, modal.booking.hip && `Hip ${modal.booking.hip} in`].filter(Boolean).join(" · ") || "Not provided"}</strong></div>}<div><span>Rental amount</span><strong>{currency(modal.booking.amount)}</strong></div><div><span>Paid to date</span><strong>{currency(modal.booking.paid)}</strong></div><div><span>Remaining balance</span><strong className={modal.booking.amount > modal.booking.paid ? "due-text" : "paid-text"}>{currency(Math.max(modal.booking.amount - modal.booking.paid, 0))}</strong></div></div>
+        <div className="detail-lines"><div><span>Booking date</span><strong>{readableDate(modal.booking.bookingDate)}</strong></div><div><span>Booked by</span><strong>{modal.booking.createdBy || modal.booking.staff || "Unknown"}</strong></div><div><span>Outfits</span><strong>{detailArticles.filter((article) => article.category !== "Jewellery Set").map((article) => article.name).join(", ") || "—"}</strong><small>{detailArticles.filter((article) => article.category !== "Jewellery Set" && article.inventory !== false).map((article) => article.id).join(", ")}</small></div><div><span>Jewellery sets</span><strong>{detailArticles.filter((article) => article.category === "Jewellery Set").map((article) => article.name).join(", ") || "—"}</strong><small>{detailArticles.filter((article) => article.category === "Jewellery Set" && article.inventory !== false).map((article) => article.id).join(", ")}</small></div><div><span>Delivery date</span><strong>{readableDate(modal.booking.delivery)}</strong></div><div><span>Return date</span><strong>{readableDate(modal.booking.returnDate)}</strong></div>{detailArticles.some((article) => article.category !== "Jewellery Set") && <div><span>Measurements</span><strong>{[modal.booking.chest && `Chest ${modal.booking.chest} in`, modal.booking.back && `Back ${modal.booking.back} in`, modal.booking.hip && `Hip ${modal.booking.hip} in`].filter(Boolean).join(" · ") || "Not provided"}</strong></div>}<div><span>Rental amount</span><strong>{currency(modal.booking.amount)}</strong></div><div><span>Paid to date</span><strong>{currency(modal.booking.paid)}</strong></div><div><span>Remaining balance</span><strong className={modal.booking.amount > modal.booking.paid ? "due-text" : "paid-text"}>{currency(Math.max(modal.booking.amount - modal.booking.paid, 0))}</strong></div></div>
         <section className="receipt-payment-history"><h3>Payment collection history</h3>
           {payments.filter((payment) => payment.booking === modal.booking.id).length
             ? <div className="table-scroll"><table><thead><tr><th>DATE</th><th>AMOUNT</th><th>METHOD</th><th>RECEIVED BY</th></tr></thead><tbody>
@@ -1986,22 +2009,23 @@ export default function App() {
   </div>;
 }
 
-function BookingForm({ booking, draft, formError, onErrorChange, articles, customers, onSubmit, onCancel, onAddArticle, addedArticleId, onAddedArticleHandled }) {
+function BookingForm({ booking, draft, initialCategory, formError, onErrorChange, articles, customers, onSubmit, onCancel, canCreateArticles, onAddArticle, addedArticleId, onAddedArticleHandled }) {
   const [submitting, setSubmitting] = useState(false);
   const submitLockRef = useRef(false);
   const [selectedArticleIds, setSelectedArticleIds] = useState(draft?.selectedArticleIds ?? (booking ? bookingArticleIds(booking) : []));
   const selectedArticles = articles.filter((item) => selectedArticleIds.includes(item.id));
   const jewelleryOnly = selectedArticles.length > 0 && selectedArticles.every((item) => item.category === "Jewellery Set");
   const [deliveryDate, setDeliveryDate] = useState(draft?.delivery || booking?.delivery || "");
-  const [articleCategory, setArticleCategory] = useState("All categories");
+  const [articleCategory, setArticleCategory] = useState(draft?.articleCategory || initialCategory || "All categories");
   const [articleSearch, setArticleSearch] = useState("");
+  const [manualArticleName, setManualArticleName] = useState(draft?.manualArticleName ?? booking?.manualArticles?.[0]?.name ?? "");
+  const [manualArticlePhoto, setManualArticlePhoto] = useState(draft?.manualArticlePhoto ?? booking?.manualArticles?.[0]?.photo ?? "");
   const categories = categoriesForArticles(articles);
   const hasOutfit = selectedArticles.some((item) => item.category !== "Jewellery Set");
-  const hideMeasurements = !hasOutfit
-    && (articleCategory === "Jewellery Set" || (articleCategory === "All categories" && jewelleryOnly));
+  const hideMeasurements = articleCategory === "Jewellery Set"
+    || (!hasOutfit && articleCategory === "All categories" && jewelleryOnly);
   const matchingArticles = articles.filter((item) => (item.status === "Available" || selectedArticleIds.includes(item.id))
-    && item.category !== "Jewellery Set"
-    && (articleCategory === "All categories" || item.category === articleCategory)
+    && (articleCategory === "All categories" ? item.category !== "Jewellery Set" : item.category === articleCategory)
     && (selectedArticleIds.includes(item.id) || !articleSearch.trim() || `${item.id} ${item.name} ${item.category}`.toLowerCase().includes(articleSearch.trim().toLowerCase())));
   const jewellerySets = articles.filter((item) => item.category === "Jewellery Set"
     && (item.status === "Available" || selectedArticleIds.includes(item.id)));
@@ -2049,6 +2073,9 @@ function BookingForm({ booking, draft, formError, onErrorChange, articles, custo
       back: String(data.get("back") || ""),
       hip: String(data.get("hip") || ""),
       notes: String(data.get("notes") || ""),
+      manualArticleName: String(data.get("manualArticleName") || ""),
+      manualArticlePhoto: String(data.get("manualArticlePhoto") || ""),
+      articleCategory,
     });
   };
   const submitBooking = async (event) => {
@@ -2065,12 +2092,23 @@ function BookingForm({ booking, draft, formError, onErrorChange, articles, custo
   };
   return <form className="form-grid" noValidate onSubmit={submitBooking}>
     <div className="booking-article-picker field-full">
-      <Field label="Category"><select aria-label="Filter articles by category" value={articleCategory} onChange={(event) => setArticleCategory(event.target.value)}><option>All categories</option>{categories.filter((category) => category !== "Jewellery Set").map((category) => <option key={category}>{category}</option>)}</select></Field>
-      <label className="booking-article-search"><Search size={15} /><input type="search" aria-label="Search articles for booking" placeholder="Type article name or number..." value={articleSearch} onChange={(event) => setArticleSearch(event.target.value)} /></label>
-      {onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={(event) => preserveDraftAndAddArticle(articleCategory === "All categories" ? undefined : articleCategory, event.currentTarget.closest("form"))}>Add new article to collection</Button>}
-      <div className="booking-article-options">{matchingArticles.map((article) => <BookingArticleOption key={article.id} article={article} selected={selectedArticleIds.includes(article.id)} onToggle={toggleArticle} />)}
-      {matchingArticles.length === 0 && <p className="booking-article-empty">{articleSearch.trim() ? "No matching articles found." : "No available articles."}</p>}</div>
-      {selectedArticles.length > 0 && <p className="booking-selected-count">{selectedArticles.length} article{selectedArticles.length === 1 ? "" : "s"} selected</p>}
+      {canCreateArticles ? <>
+        <Field label="Category"><select aria-label="Filter articles by category" value={articleCategory} onChange={(event) => setArticleCategory(event.target.value)}><option>All categories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select></Field>
+        <label className="booking-article-search"><Search size={15} /><input type="search" aria-label="Search articles for booking" placeholder="Type article name or number..." value={articleSearch} onChange={(event) => setArticleSearch(event.target.value)} /></label>
+        {onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={(event) => preserveDraftAndAddArticle(articleCategory === "All categories" ? undefined : articleCategory, event.currentTarget.closest("form"))}>{articleCategory === "Jewellery Set" ? "Add new jewellery article" : "Add new article to collection"}</Button>}
+        <div className="booking-article-options">{matchingArticles.map((article) => <BookingArticleOption key={article.id} article={article} selected={selectedArticleIds.includes(article.id)} onToggle={toggleArticle} />)}
+        {matchingArticles.length === 0 && <p className="booking-article-empty">{articleSearch.trim() ? "No matching articles found." : "No available articles."}</p>}</div>
+        {selectedArticles.length > 0 && <p className="booking-selected-count">{selectedArticles.length} article{selectedArticles.length === 1 ? "" : "s"} selected</p>}
+      </> : <>
+        {selectedArticleIds.map((id) => <input key={id} type="hidden" name="articles" value={id} />)}
+        {selectedArticles.length > 0 && <p className="booking-selected-count">Current inventory articles: {selectedArticles.map((article) => article.name).join(", ")}</p>}
+        {articleCategory === "Jewellery Set" && <p className="booking-selected-count field-full">Category: Jewellery Set</p>}
+        <Field label="Article name *" className="field-full"><input name="manualArticleName" value={manualArticleName} onChange={(event) => setManualArticleName(event.target.value)} placeholder="Type the article name" required={!selectedArticleIds.length} /></Field>
+        <PhotoUpload value={manualArticlePhoto} onChange={setManualArticlePhoto} />
+        <input className="form-hidden" type="hidden" name="manualArticlePhoto" value={manualArticlePhoto} readOnly />
+        <input className="form-hidden" type="hidden" name="manualArticleCategory" value={articleCategory === "Jewellery Set" ? "Jewellery Set" : "Custom"} readOnly />
+        <small className="suggested-price field-full">This article will appear on the booking and receipt, but will not be added to inventory.</small>
+      </>}
     </div>
     <div className="booking-customer-field field-full">
       <Field label="Customer name *"><input name="customerName" value={customerDetails.name} onChange={(event) => setCustomerDetails({ ...customerDetails, name: event.target.value })} placeholder="Customer name" required /></Field>
@@ -2090,13 +2128,13 @@ function BookingForm({ booking, draft, formError, onErrorChange, articles, custo
     <div className="booking-balance field-full"><span>Total rental <strong>{currency(amount)}</strong></span><span>Balance after advance <strong>{currency(Math.max(Number(amount || 0) - Number(paid || 0), 0))}</strong></span></div>
     {!hideMeasurements && <div className="booking-measurements field-full"><strong>Customer measurements <span>(optional · inches)</span></strong><div><Field label="Chest"><input name="chest" type="number" min="0" step="0.1" defaultValue={draft?.chest ?? booking?.chest ?? ""} placeholder="Chest size" /></Field><Field label="Back"><input name="back" type="number" min="0" step="0.1" defaultValue={draft?.back ?? booking?.back ?? ""} placeholder="Back size" /></Field><Field label="Hip"><input name="hip" type="number" min="0" step="0.1" defaultValue={draft?.hip ?? booking?.hip ?? ""} placeholder="Hip size" /></Field></div></div>}
     <Field label="Special instructions" className="field-full"><textarea name="notes" rows="2" defaultValue={draft?.notes ?? booking?.notes ?? ""} placeholder="Fitting notes, alterations, or other details..." /></Field>
-    <section className="booking-jewellery-section field-full" aria-label="Jewellery set selection">
+    {canCreateArticles && articleCategory !== "Jewellery Set" && <section className="booking-jewellery-section field-full" aria-label="Jewellery set selection">
       <strong>Jewellery sets <span>Optional — book alone or with an outfit.</span></strong>
       {jewellerySets.length
         ? <div className="booking-article-options">{jewellerySets.map((article) => <BookingArticleOption key={article.id} article={article} selected={selectedArticleIds.includes(article.id)} onToggle={toggleArticle} icon={Gem} />)}</div>
         : <p className="booking-article-empty">No jewellery sets available. Add a Jewellery Set article to your collection.</p>}
-      {onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={(event) => preserveDraftAndAddArticle("Jewellery Set", event.currentTarget.closest("form"))}>Add jewellery set</Button>}
-    </section>
+      {canCreateArticles && onAddArticle && <Button type="button" variant="outline" icon={Plus} onClick={(event) => preserveDraftAndAddArticle("Jewellery Set", event.currentTarget.closest("form"))}>Add jewellery set</Button>}
+    </section>}
     {formError && <div className="booking-form-error field-full" role="alert" aria-live="assertive"><AlertTriangle size={18} /><span>{formError}</span></div>}
     <div className="modal-actions" ref={formActionsRef}><Button variant="outline" onClick={onCancel} disabled={submitting}>Cancel</Button><Button type="submit" icon={booking ? Check : CalendarDays} disabled={submitting}>{submitting ? "Saving booking…" : booking ? "Save changes" : "Confirm booking"}</Button></div>
   </form>;

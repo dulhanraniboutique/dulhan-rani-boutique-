@@ -67,6 +67,7 @@ function publicProfile(account) {
     phone: account.phone || "",
     title: account.title || "",
     active: account.active !== false,
+    canCreateArticles: account.role === "admin" || account.canCreateArticles === true,
     createdAt: account.createdAt || null,
   };
 }
@@ -78,6 +79,7 @@ function loginProfile(account) {
     name: account.name,
     title: account.title || "",
     active: account.active !== false,
+    canCreateArticles: account.role === "admin" || account.canCreateArticles === true,
   };
 }
 
@@ -144,6 +146,7 @@ async function checkSalesWriteAccess(resource, account, collection, upserts, del
   if (resource === "articles") {
     const existing = await collection.find({ _id: { $in: upserts.map((item) => item.id) } }).toArray();
     if (existing.length) return "Article changes must be approved by an administrator.";
+    if (!account.canCreateArticles) return "Your profile is not allowed to add articles.";
   }
 
   if (resource === "bookings") {
@@ -650,9 +653,10 @@ app.post("/api/approval-requests/:id/review", requireAuth, requireAdmin, async (
 
 app.post("/api/auth/profiles", requireAuth, requireAdmin, async (request, response, next) => {
   try {
-    const { name, email = "", phone = "", title = "Salesperson", pin } = request.body || {};
+    const { name, email = "", phone = "", title = "Salesperson", canCreateArticles = false, pin } = request.body || {};
     if (typeof name !== "string" || !name.trim() || name.trim().length > 60
       || typeof email !== "string" || typeof phone !== "string" || typeof title !== "string"
+      || typeof canCreateArticles !== "boolean"
       || !validPin(pin)) {
       response.status(400).json({ error: "Enter a name and a 4 to 6 digit PIN." });
       return;
@@ -672,6 +676,7 @@ app.post("/api/auth/profiles", requireAuth, requireAdmin, async (request, respon
       phone: phone.trim(),
       title: title.trim() || "Salesperson",
       active: true,
+      canCreateArticles,
       createdAt: new Date(),
       ...(await makePinRecord(pin)),
     };
@@ -691,11 +696,12 @@ app.put("/api/auth/profiles/:id", requireAuth, async (request, response, next) =
       return;
     }
 
-    const { name, email, phone, title, active, pin } = request.body || {};
+    const { name, email, phone, title, active, canCreateArticles, pin } = request.body || {};
     if ((name !== undefined && (typeof name !== "string" || !name.trim() || name.trim().length > 60))
       || (email !== undefined && typeof email !== "string")
       || (phone !== undefined && typeof phone !== "string")
       || (title !== undefined && typeof title !== "string")
+      || (canCreateArticles !== undefined && (!isAdmin || typeof canCreateArticles !== "boolean"))
       || (active !== undefined && (!isAdmin || typeof active !== "boolean"))
       || (pin !== undefined && (!isAdmin || id === "admin" || !validPin(pin)))
       || (id === "admin" && active !== undefined)) {
@@ -708,6 +714,7 @@ app.put("/api/auth/profiles/:id", requireAuth, async (request, response, next) =
     if (email !== undefined) updates.email = email.trim();
     if (phone !== undefined) updates.phone = phone.trim();
     if (title !== undefined) updates.title = title.trim();
+    if (canCreateArticles !== undefined) updates.canCreateArticles = canCreateArticles;
     if (active !== undefined) updates.active = active;
     if (pin !== undefined) Object.assign(updates, await makePinRecord(pin));
     const db = await getDatabase();
